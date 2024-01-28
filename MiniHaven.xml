@@ -1,0 +1,60 @@
+<Item href="#n:inline(AdvMapTown)" id="item_64363DC2-BAFC-40EC-93E2-084B6B69855D">
+    <AdvMapTown>
+        <Pos>
+            <x>43</x>
+            <y>37</y>
+            <z>0</z>
+        </Pos>
+        <Rot>0</Rot>
+        <Floor>0</Floor>
+        <Name>MiniHaven</Name>
+        <CombatScript/>
+        <pointLights/>
+        <Shared href="/MapObjects/MiniHaven.(AdvMapTownShared).xdb#xpointer(/AdvMapTownShared)"/>
+        <PlayerID>PLAYER_NONE</PlayerID>
+        <CaptureTrigger>
+            <Action>
+                <FunctionName/>
+            </Action>
+        </CaptureTrigger>
+        <HeroDeployTrigger>
+            <Action>
+                <FunctionName/>
+            </Action>
+        </HeroDeployTrigger>
+        <ShipTile>
+            <x>0</x>
+            <y>0</y>
+        </ShipTile>
+        <Specialization/>
+        <buildings>
+            <Item>
+                <Type>TB_DWELLING_2</Type>
+                <InitialUpgrade>BLD_UPG_2</InitialUpgrade>
+                <MaxUpgrade>BLD_UPG_2</MaxUpgrade>
+            </Item>
+        </buildings>
+        <Editable>
+            <NameFileRef href="TownName.2.txt"/>
+            <BiographyFileRef href="TownBiography.2.txt"/>
+        </Editable>
+        <armySlots/>
+        <spellIDs/>
+        <CaptionFileRef href=""/>
+        <GarrisonHero/>
+        <Script/>
+        <RndSource>RND_NONE</RndSource>
+        <LinkToPlayer>PLAYER_NONE</LinkToPlayer>
+        <LinkToTown/>
+        <CanCaptureOnlyNotVisit>false</CanCaptureOnlyNotVisit>
+        <AllowQuickCombat>true</AllowQuickCombat>
+        <CreaturesUpgradesFilter>
+            <ForbiddenBasicUpgradeTiers/>
+            <ForbiddenAlterUpgradeTiers/>
+            <NotUpgradeable/>
+            <ForbiddenUpgrades/>
+        </CreaturesUpgradesFilter>
+        <GarrisonBlockedForAI>false</GarrisonBlockedForAI>
+        <BannedRaces/>
+    </AdvMapTown>
+</Item>
