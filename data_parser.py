@@ -1,19 +1,24 @@
 import logging
 import os
 import xml.etree.ElementTree as ET
+from collections import namedtuple
 from time import time
 from zipfile import BadZipFile, ZipFile
 from threading import Lock
 
+from persistence import per
+
 
 # Global and game info
 info = None
+ModsStatusClass = namedtuple("ModsStatusClass", ["all_heroes", "all_spells_artefacts", "racial_ability_boost"])
+ModsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强Mod")
 
 
 class RawData:
     DIRS = {"data": ".pak", "UserMods": ".h5u", "Maps": ".h5m"}
-    PREFIX_FILTERS = ("maps/", )
-    SUFFIX_FILTERS = ("map.xdb", )
+    PREFIX_FILTERS = ("maps/", "ttberein/", )
+    SUFFIX_FILTERS = (".xdb", ".chk", )
 
     def __init__(self, h5_path: str):
         self.h5_path = h5_path
@@ -37,13 +42,13 @@ class RawData:
         with self.lock:
             self.total_prog = 0
 
-            for folder, file_suf in RawData.DIRS.items():
-                fullpath = os.path.join(self.h5_path, folder)
-                if os.path.isdir(fullpath):
-                    self.total_prog += len(tuple(f for f in os.listdir(fullpath)
-                                                 if f.lower().endswith(file_suf)))
-                else:
-                    raise ValueError(f"\"{self.h5_path}\"中没有找到\"{folder}\"")
+        for folder, file_suf in RawData.DIRS.items():
+            fullpath = os.path.join(self.h5_path, folder)
+            if os.path.isdir(fullpath):
+                self.total_prog += len(tuple(f for f in os.listdir(fullpath)
+                                                if f.lower().endswith(file_suf)))
+            else:
+                raise ValueError(f"\"{self.h5_path}\"中没有找到\"{folder}\"")
 
     def _build_zip_list(self):
         self.manifest = {}
@@ -85,9 +90,6 @@ class RawData:
                     except BadZipFile:
                         logging.info(f"  {folder}中的{f}并不是有效的压缩文件")
 
-    def walk(self, target: str):
-        raise NotImplementedError
-
     def listdir(self, target: str, zips_to_exclude=set()):
         target = target.lower()
         if not target.endswith("/"):
@@ -115,10 +117,18 @@ class RawData:
         return sorted(list(all_dirs)), {v[2]: v[1] for k, v in all_files.items()}
 
     def get_file_by_zip(self, target: str, zip_name: str):
-        return self.zip_q[zip_name].read(self.manifest[zip_name][target][0])
+        return self.zip_q[zip_name].read(self.manifest[zip_name][target.lower()][0])
 
     def get_file(self, target: str):
-        pass
+        target = target.lower()
+        result = (None, None, None)
+        for zip_name in self.zip_q:
+            for fz_info in self.zip_q[zip_name].infolist():
+                if fz_info.filename.lower() == target:
+                    if result[0] is None or fz_info.date_time >= result[0]:
+                        result = (fz_info.date_time, fz_info.filename, zip_name)
+
+        return result[1:]
 
     def get_progress(self):
         with self.lock:
@@ -130,60 +140,120 @@ class RawData:
 
     @staticmethod
     def get_time_weightage():
-        return 1.0
+        return 2.80
 
 
 class GameInfo:
-
     def __init__(self):
         self.curr_prog = 0
-        self.total_prog = 1567
+        self.total_prog = 1e5
         self.curr_stage = None
         self.lock = Lock()
+        self.work_done = False
 
-    def run(self, data: RawData):
-        # Get all scenarios map.xdb
-        scenarios = []
-        folders, _ = data.listdir("maps/scenario", set([".h5m"]))
-        for folder in folders:
-            _, files = data.listdir(folder, set([".h5m"]))
-            for file in files.items():
-                scenarios.append(file)
+    def preload(self, data: RawData):
+        def _get_map_xdbs(map_dir, map_excl_set):
+            result = {}
+            folders, _ = data.listdir(map_dir, map_excl_set)
+            for folder in folders:
+                _, files = data.listdir(folder, map_excl_set)
 
-        # Get all singlemissions map.xdb
-        singlemissions = []
-        folders, _ = data.listdir("maps/singlemissions", set([".h5m"]))
-        for folder in folders:
-            _, files = data.listdir(folder, set([".h5m"]))
-            for file in files.items():
-                singlemissions.append(file)
+                map_xdb_name = None
+                for file_name, zip_name in files.items():
+                    if os.path.basename(file_name.lower()) == "map-tag.xdb":
+                        et = ET.fromstring(data.get_file_by_zip(file_name, zip_name))
+                        map_xdb_name = os.path.dirname(file_name) + "/" + \
+                            et.find("AdvMapDesc").attrib["href"].split("#")[0]
+                        break
 
-        # Get all multiplayler map.xdb
-        multiplayer = []
-        folders, _ = data.listdir("maps/multiplayer", set([".h5m"]))
-        for folder in folders:
-            _, files = data.listdir(folder, set([".h5m"]))
-            for file in files.items():
-                multiplayer.append(file)
+                if map_xdb_name is None:
+                    continue
 
-        # Get all customized map.xdb
-        customized = []
-        folders, _ = data.listdir("maps/multiplayer", set([".h5u", ".pak"]))
-        for folder in folders:
-            _, files = data.listdir(folder, set([".h5u", ".pak"]))
-            for file in files.items():
-                customized.append(file)
-        folders, _ = data.listdir("maps/rmg", set([".h5u", ".pak"]))
-        for folder in folders:
-            _, files = data.listdir(folder, set([".h5u", ".pak"]))
-            for file in files.items():
-                customized.append(file)
+                for file_name, zip_name in files.items():
+                    if map_xdb_name.lower() == file_name.lower():
+                        result[file_name] = data.get_file_by_zip(file_name, zip_name)
+                        break
+
+            return result
+
+        with self.lock:
+            self.curr_prog = 0
+            self.curr_stage = "正在预加载XDB文件入内存……"
+
+        prev_timeit = time()
+        num_files = 0
+        self.xdbs = {}
+        xdb_jobs = (("scenario", "maps/scenario", set([".h5m"])),
+                    ("singlemissions", "maps/singlemissions", set([".h5m"])),
+                    ("multiplayer", "maps/multiplayer", set([".h5m"])),
+                    ("customized", "maps/multiplayer", set([".h5u", ".pak"])),
+                    ("customized", "maps/rmg", set([".h5u", ".pak"])))
+        for map_cat, map_dir, map_excl_set in xdb_jobs:
+            if map_cat not in self.xdbs:
+                self.xdbs[map_cat] = {}
+            temp_dict = _get_map_xdbs(map_dir, map_excl_set)
+            self.xdbs[map_cat] = {**self.xdbs[map_cat], **temp_dict}
+            num_files += len(temp_dict)
+
+        with self.lock:
+            self.curr_prog = 1
+
+        logging.warning(f"游戏数据预加载完毕，发现{num_files}个相关文件，用时{time() - prev_timeit:.2f}秒。")
+
+        jobs = ("TTBereinAllHeroes.chk", "TTBereinAllSpellsArtefacts.chk", "TTBereinRacialAbilityBoost.chk")
+
+        self._mods_status = ModsStatusClass(*(data.get_file("TTBerein/" + j)[1] for j in jobs))
+        for i in range(len(self._mods_status)):
+            if self._mods_status[i] is not None:
+                logging.warning(f"发现“{os.path.basename(self._mods_status[i])}”已安装，"
+                                f"可以进行“{ModsStatusNames[i]}”方面的兼容")
+            else:
+                logging.warning(f"没有发现{ModsStatusNames[i]}。")
 
         return self
 
+    def work(self, cb_matrix):
+        with self.lock:
+            self.curr_prog = 1
+            self.work_done = False
+
+        if all(j is False for i in cb_matrix.values() for j in i):
+            raise ValueError("无任何选项被勾选，退回！")
+
+        num_xmls = sum(len(v) for v in self.xdbs.values())
+        with self.lock:
+            self.total_prog = num_xmls
+
+        logging.info("开始生成兼容文件")
+        logging.info(f"  共有{num_xmls}个现有xdb文件需要加载")
+        prev_timeit = time()
+        for cat in self.xdbs:
+            for xml_name in self.xdbs[cat]:
+                self.xdbs[cat][xml_name] = ET.fromstring(self.xdbs[cat][xml_name])
+                with self.lock:
+                    self.curr_prog += 1
+                    self.curr_stage = f"正在解读{xml_name}"
+                    if self.work_done is True:
+                        raise InterruptedError
+        logging.warning(f"  现有xdb文件加载完毕，共耗时{time() - prev_timeit:.2f}秒。")
+        prev_timeit = time()
+
+        with self.lock:
+            self.work_done = True
+
+        return self
+
+    def cancel(self):
+        with self.lock:
+            self.work_done = True
+
+    @property
+    def mod_status(self):
+        return self._mods_status
+
     @staticmethod
     def get_time_weightage():
-        return 0.0
+        return 0.25
 
     def get_progress(self):
         with self.lock:

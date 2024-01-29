@@ -17,7 +17,6 @@ class Persistence:
         self.log_x, self.log_y = [int(i) for i in contents[3].split(",")]
         self.rc_path = ""
         self._get_resource_path()
-        pass
 
     def save(self):
         contents = (self.last_path, self.show_log,

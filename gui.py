@@ -3,14 +3,38 @@ from threading import Thread, Lock
 from queue import Queue, Empty
 from tkinter import END
 from tkinter import messagebox, Tk, Menu, scrolledtext, Toplevel, filedialog, LabelFrame, simpledialog
-from tkinter.ttk import Label, Progressbar, Style, Checkbutton
+from tkinter.ttk import Label, Progressbar, Style, Checkbutton, Button
 
-from data_parser import RawData, GameInfo
+from data_parser import RawData, GameInfo, ModsStatusClass
 from persistence import per
 import data_parser as gg
 
 
 TITLE = "英雄无敌5MOD兼容工具 by 天天英吧"
+
+
+class CancelWnd(Toplevel):
+    def __init__(self, parent: Tk, cancel_func):
+        super(CancelWnd, self).__init__(parent)
+        self.title("进行中……")
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        Label(self, text="任务进行中……").grid(row = 0, column=0, padx=20, pady=20)
+        self.button = Button(self, text="取消", command=self.on_cancel_click)
+        self.attributes("-toolwindow", True)
+        self.button.grid(row = 1, column=0, padx=20, pady=20)
+
+        x = parent.winfo_rootx() + parent.winfo_width()/2
+        y = parent.winfo_rooty() + parent.winfo_height()/2
+        self.geometry("+{}+{}".format(int(x), int(y)))
+
+        self.cancel_func = cancel_func
+        self.parent = parent
+
+    def on_cancel_click(self):
+        self.cancel_func()
+        self.destroy()
+        self.parent.deiconify()
 
 
 class AboutWnd(simpledialog.Dialog):
@@ -19,7 +43,6 @@ class AboutWnd(simpledialog.Dialog):
 
     def body(self, master):
         font = ("TkFixedFont", 11)
-
 
     def buttonbox(self):
         pass
@@ -93,7 +116,6 @@ class MainWnd(Tk):
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
-        self._build_top_menu()
         self.update()
         self.geometry("+{}+{}".format(per.main_x, per.main_y))
         self._asking_game_data()
@@ -117,10 +139,57 @@ class MainWnd(Tk):
         self.top_menu.add_command(label="帮助与关于",command=self._on_menu_about)
 
     def _on_menu_createmod(self):
-        # TODO
-        messagebox.showinfo("aaa", per.get_about_txt())
+        self.status_text.grid(column=0, row=self.num_rows, sticky="we", columnspan=1)
+        self.status_prog.grid(column=1, row=self.num_rows, sticky="we")
+        self.attributes("-disabled", True)
+        cb_matrix = {k:ModsStatusClass(*("selected" in i.state() for i in v)) for k, v in self.checkboxes.items()}
+        Thread(target=self._creatmod_thread, args=(self.data, cb_matrix)).start()
+        self.cancel_wnd = CancelWnd(self, self.data.cancel)
+        self.cancel_wnd.update()
+        self.cancel_wnd.deiconify()
+        self.after(10, self._createmod_thread_after, self.data)
 
-    def _on_menu_showlog(self, event=None):
+    def _creatmod_thread(self, data: GameInfo, cb_matrix: dict):
+        gg.info = None
+        try:
+            gg.info = data.work(cb_matrix)
+        except ValueError as e:
+            gg.info = e
+        except InterruptedError as e:
+            gg.info = e
+
+    def _createmod_thread_after(self, data):
+        def clean_up(finished_text):
+            self.attributes("-disabled", False)
+            self.status_prog.grid_forget()
+            self.status_text.grid(column=0, row=self.num_rows, sticky="ew", columnspan=2)
+            self.status_text.config(text=finished_text)
+            self.cancel_wnd.destroy()
+
+        with self.lock:
+            if type(gg.info) == ValueError:
+                messagebox.showerror("错误！" , str(gg.info))
+                clean_up("生成兼容补丁失败")
+            elif type(gg.info) == InterruptedError:
+                clean_up("任务中断")
+            elif type(gg.info) == GameInfo:
+                messagebox.showinfo("完成！", "兼容补丁生成完成！")
+                clean_up("生成兼容补丁成功")
+            else:
+                status_text = ""
+                prog_value = 0.0
+
+                status_text = data.get_stage()
+                prog_value = data.get_progress() * 100
+
+                prog_value = 100.00 if prog_value > 100.00 else prog_value
+                status_text = f"{status_text}, 总进度{prog_value:.2f}%"
+                status_text += (65 - len(status_text)) * " "
+                self.status_text.config(text=status_text)
+                self.status_prog.config(value=prog_value)
+                self.after(10, self._createmod_thread_after, data)
+
+    def _on_menu_showlog(self):
         if per.show_log:
             new_text = "显示日志"
             self.log_wnd.withdraw()
@@ -138,37 +207,34 @@ class MainWnd(Tk):
     def _build_main_frame(self):
         self.checkboxes = {}
 
-        def _add_labelframe(title: str, row: int, options: list):
+        def _add_labelframe(title: str, row: int, options: list, mod_status: ModsStatusClass):
             lb = LabelFrame(self, text=title, font=("TkFixedFont", 11))
-            lb.grid(column=0, row=row, sticky="ew", padx=10, pady=10)
-            cb1 = Checkbutton(lb, text=options[0])
-            cb1.grid(column=0, row=0, sticky="w", padx=10, pady=10)
-            cb1.state(['!alternate'])
-            cb2 = Checkbutton(lb, text=options[1])
-            cb2.grid(column=1, row=0, sticky="w", padx=10, pady=0)
-            cb2.state(['!alternate'])
-            cb3 = Checkbutton(lb, text=options[2])
-            cb3.grid(column=2, row=0, sticky="w", padx=10, pady=10)
-            cb3.state(['!alternate'])
-            return (cb1, cb2, cb3)
+            lb.grid(column=0, row=row, columnspan=2, sticky="ew", padx=10, pady=10)
+            cbs = ModsStatusClass(*[Checkbutton(lb, text=i) for i in options])
+            for i, cb in enumerate(cbs):
+                cb.grid(column=i, row=0, sticky="w", padx=10, pady=10)
+                cb.state(["!alternate"])
+                if mod_status[i] is None:
+                    cb.state(["disabled"])
+                else:
+                    cb.state(["selected"])
+
+            return cbs
 
         options = ["兼容全英雄MOD", "兼容全魔法MOD（除了探险魔法）", "兼容种族增强MOD"]
-        self.checkboxes["scenario"] = _add_labelframe(title="官方战役图兼容选项", row = self.num_rows, options=options)
+        self.checkboxes["scenario"] =  _add_labelframe("官方战役图兼容选项", self.num_rows, options, self.data.mod_status)
         self.num_rows += 1
         options[1] = "兼容全魔法全宝物MOD（除了探险魔法和宝物）"
-        self.checkboxes["singlemissions"] = _add_labelframe(title="官方单人剧情图兼容选项",
-                                                            row = self.num_rows, options=options)
+        self.checkboxes["singlemissions"] = _add_labelframe("官方单人剧情图兼容选项", self.num_rows, options,
+                                                            self.data.mod_status)
         self.num_rows += 1
         options[1] = "兼容全魔法全宝物MOD（包括探险魔法和宝物）"
-        self.checkboxes["multiplayer"] = _add_labelframe(title="官方多人图兼容选项", row = self.num_rows, options=options)
+        self.checkboxes["multiplayer"] = _add_labelframe("官方多人图兼容选项", self.num_rows, options,
+                                                         self.data.mod_status)
         self.num_rows += 1
-        self.checkboxes["customized"] = _add_labelframe(title="玩家自制多人图和随机图兼容选项",
-                                                        row = self.num_rows, options=options)
+        self.checkboxes["customized"] = _add_labelframe("玩家自制多人图和随机图兼容选项", self.num_rows, options,
+                                                        self.data.mod_status)
         self.num_rows += 1
-
-        self.status_prog.grid_forget()
-        self.status_text.grid(column=0, row=self.num_rows, sticky="ew", columnspan=2)
-        self.status_text.config(text="游戏数据加载完毕")
 
     def _asking_game_data(self):
         self.withdraw()
@@ -190,7 +256,7 @@ class MainWnd(Tk):
         Thread(target=self._ask_game_data_thread, args=(raw_data, game_info)).start()
         self.after(10, self._ask_game_data_after, raw_data, game_info)
 
-    def _ask_game_data_thread(self, raw_data: gg.RawData, game_info: gg.GameInfo):
+    def _ask_game_data_thread(self, raw_data: gg.RawData, game_info: GameInfo):
         try:
             raw_data.run()
         except ValueError as e:
@@ -199,7 +265,7 @@ class MainWnd(Tk):
             return
 
         try:
-            game_info.run(raw_data)
+            game_info.preload(raw_data)
         except ValueError as e:
             with self.lock:
                 gg.info = e
@@ -208,14 +274,20 @@ class MainWnd(Tk):
         with self.lock:
             gg.info = game_info
 
-    def _ask_game_data_after(self, raw_data: gg.RawData, game_info: gg.GameInfo):
+    def _ask_game_data_after(self, raw_data: gg.RawData, game_info: GameInfo):
         with self.lock:
             if type(gg.info) is ValueError:
                 self.withdraw()
                 messagebox.showerror(TITLE, str(gg.info) + "，\n请检查是否是正确的英雄无敌5安装文件夹")
-                self._asking_game_data()
+                exit()
             elif type(gg.info) is GameInfo:
+                self.data = gg.info
+                self.status_prog.grid_forget()
+                self.status_text.grid(column=0, row=4, sticky="ew", columnspan=2)
+                self.status_text.config(text="游戏数据加载完毕")
+                self._build_top_menu()
                 self._build_main_frame()
+                self._on_menu_createmod()
             else:
                 status_text = ""
                 prog_value = 0.0
