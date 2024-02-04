@@ -1,11 +1,12 @@
 import logging
 from threading import Thread, Lock
 from queue import Queue, Empty
+from collections.abc import Callable
 from tkinter import END
 from tkinter import messagebox, Tk, Menu, scrolledtext, Toplevel, filedialog, LabelFrame, simpledialog
 from tkinter.ttk import Label, Progressbar, Style, Checkbutton, Button
 
-from data_parser import RawData, GameInfo, ModsStatusClass
+from data_parser import RawData, GameInfo, ModsStatusClass, PATCH_FILE_NAME, remove_merged_patch
 from persistence import per
 import data_parser as gg
 
@@ -14,7 +15,7 @@ TITLE = "英雄无敌5MOD兼容工具 by 天天英吧"
 
 
 class CancelWnd(Toplevel):
-    def __init__(self, parent: Tk, cancel_func):
+    def __init__(self, parent: Tk, cancel_func: Callable):
         super(CancelWnd, self).__init__(parent)
         self.title("进行中……")
         self.grid_columnconfigure(0, weight=1)
@@ -22,10 +23,11 @@ class CancelWnd(Toplevel):
         Label(self, text="任务进行中……").grid(row = 0, column=0, padx=20, pady=20)
         self.button = Button(self, text="取消", command=self.on_cancel_click)
         self.attributes("-toolwindow", True)
+        #self.attributes("-topmost", True)
         self.button.grid(row = 1, column=0, padx=20, pady=20)
 
-        x = parent.winfo_rootx() + parent.winfo_width()/2
-        y = parent.winfo_rooty() + parent.winfo_height()/2
+        x = parent.winfo_rootx() + parent.winfo_width()/2 - 80
+        y = parent.winfo_rooty() + parent.winfo_height()/2 - 50
         self.geometry("+{}+{}".format(int(x), int(y)))
 
         self.cancel_func = cancel_func
@@ -40,9 +42,15 @@ class CancelWnd(Toplevel):
 class AboutWnd(simpledialog.Dialog):
     def __init__(self, parent, title="关于“英雄无敌5MOD兼容工具”"):
         super(AboutWnd, self).__init__(parent=parent, title=title)
+        self.attributes("-toolwindow", True)
+        self.attributes("-topmost", True)
 
     def body(self, master):
-        font = ("TkFixedFont", 11)
+        textbox = scrolledtext.ScrolledText(self, height=20, width=80)
+        textbox.configure(font=('TkFixedFont', 11))
+        textbox.insert(END, per.get_about_txt())
+        textbox.pack()
+        textbox.configure(state="disabled")
 
     def buttonbox(self):
         pass
@@ -66,7 +74,7 @@ class LogWnd(Toplevel):
         self.title("日志记录")
 
         self.log_box = scrolledtext.ScrolledText(self, state='disabled', height=60, width=80)
-        self.log_box.configure(font='TkFixedFont')
+        self.log_box.configure(font=('TkFixedFont', 11))
         self.log_box.grid(column=0, row=0, sticky="NEWS")
         text_handler = LogWnd._TextHandler(self.queue)
         logger = logging.getLogger()
@@ -133,6 +141,7 @@ class MainWnd(Tk):
         self.config(menu=self.top_menu)
 
         self.top_menu.add_command(label="生成兼容文件", command=self._on_menu_createmod)
+        self.top_menu.add_command(label="移除兼容文件", command=self._on_menu_removemod)
         self.top_menu.add_command(label="", command=self._on_menu_showlog)
         per.show_log = not per.show_log
         self._on_menu_showlog()
@@ -149,7 +158,7 @@ class MainWnd(Tk):
         self.cancel_wnd.deiconify()
         self.after(10, self._createmod_thread_after, self.data)
 
-    def _creatmod_thread(self, data: GameInfo, cb_matrix: dict):
+    def _creatmod_thread(self, data: GameInfo, cb_matrix: dict[str, ModsStatusClass[bool]]):
         gg.info = None
         try:
             gg.info = data.work(cb_matrix)
@@ -168,12 +177,12 @@ class MainWnd(Tk):
 
         with self.lock:
             if type(gg.info) == ValueError:
-                messagebox.showerror("错误！" , str(gg.info))
+                messagebox.showerror(TITLE , str(gg.info))
                 clean_up("生成兼容补丁失败")
             elif type(gg.info) == InterruptedError:
                 clean_up("任务中断")
             elif type(gg.info) == GameInfo:
-                messagebox.showinfo("完成！", "兼容补丁生成完成！")
+                messagebox.showinfo(TITLE, "兼容补丁“UserMODS/" + PATCH_FILE_NAME + "”生成完成！")
                 clean_up("生成兼容补丁成功")
             else:
                 status_text = ""
@@ -189,6 +198,15 @@ class MainWnd(Tk):
                 self.status_prog.config(value=prog_value)
                 self.after(10, self._createmod_thread_after, data)
 
+    def _on_menu_removemod(self):
+        try:
+            if remove_merged_patch()[1] is True:
+                messagebox.showinfo(TITLE, "生成的补丁已经移除")
+            else:
+                messagebox.showwarning(TITLE, f"找不到补丁文件“UserMODS/" + PATCH_FILE_NAME+"”")
+        except PermissionError as e:
+            messagebox.showerror(TITLE, str(e))
+
     def _on_menu_showlog(self):
         if per.show_log:
             new_text = "显示日志"
@@ -199,7 +217,7 @@ class MainWnd(Tk):
             self.focus_set()
 
         per.show_log = not per.show_log
-        self.top_menu.entryconfig(2, label=new_text)
+        self.top_menu.entryconfig(3, label=new_text)
 
     def _on_menu_about(self):
         self.about_wnd = AboutWnd(self)
@@ -235,6 +253,8 @@ class MainWnd(Tk):
         self.checkboxes["customized"] = _add_labelframe("玩家自制多人图和随机图兼容选项", self.num_rows, options,
                                                         self.data.mod_status)
         self.num_rows += 1
+
+        self.checkboxes["scenario"].all_heroes.state(["!selected", "disabled"])
 
     def _asking_game_data(self):
         self.withdraw()
@@ -278,7 +298,7 @@ class MainWnd(Tk):
         with self.lock:
             if type(gg.info) is ValueError:
                 self.withdraw()
-                messagebox.showerror(TITLE, str(gg.info) + "，\n请检查是否是正确的英雄无敌5安装文件夹")
+                messagebox.showerror(TITLE, str(gg.info))
                 exit()
             elif type(gg.info) is GameInfo:
                 self.data = gg.info
@@ -287,7 +307,7 @@ class MainWnd(Tk):
                 self.status_text.config(text="游戏数据加载完毕")
                 self._build_top_menu()
                 self._build_main_frame()
-                self._on_menu_createmod()
+                #self._on_menu_createmod()
             else:
                 status_text = ""
                 prog_value = 0.0

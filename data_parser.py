@@ -3,7 +3,7 @@ import os
 import xml.etree.ElementTree as ET
 from collections import namedtuple
 from time import time
-from zipfile import BadZipFile, ZipFile
+from zipfile import BadZipFile, ZipFile, ZIP_DEFLATED
 from threading import Lock
 
 from persistence import per
@@ -13,7 +13,21 @@ from persistence import per
 info = None
 ModsStatusClass = namedtuple("ModsStatusClass", ["all_heroes", "all_spells_artefacts", "racial_ability_boost"])
 ModsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强Mod")
+TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniPreserve")
+PATCH_FILE_NAME = "TTBereinMergedPatch.h5u"
 
+
+def remove_merged_patch():
+    merged_patch = os.path.join(per.last_path, "UserMODs", PATCH_FILE_NAME)
+    if os.path.isfile(merged_patch):
+        try:
+            os.remove(merged_patch)
+            return merged_patch, True
+        except PermissionError:
+            err_msg = f"无法移除{merged_patch}。\n请检查游戏或者地图编辑器是否正在运行，如果是的话请关闭游戏或者地图编辑器。"
+            raise PermissionError(err_msg)
+
+    return merged_patch, False
 
 class RawData:
     DIRS = {"data": ".pak", "UserMods": ".h5u", "Maps": ".h5m"}
@@ -46,9 +60,10 @@ class RawData:
             fullpath = os.path.join(self.h5_path, folder)
             if os.path.isdir(fullpath):
                 self.total_prog += len(tuple(f for f in os.listdir(fullpath)
-                                                if f.lower().endswith(file_suf)))
-            else:
-                raise ValueError(f"\"{self.h5_path}\"中没有找到\"{folder}\"")
+                                             if f.lower().endswith(file_suf)
+                                             and PATCH_FILE_NAME.lower() not in f.lower()))
+            elif folder.lower() == "data":
+                raise ValueError(f"\"{self.h5_path}\"中没有找到\"{folder}\"，\n请检查是否是正确的英雄无敌5安装文件夹")
 
     def _build_zip_list(self):
         self.manifest = {}
@@ -64,7 +79,8 @@ class RawData:
 
             for f in os.listdir(fullpath):
                 fullname = os.path.join(fullpath, f)
-                if os.path.isfile(fullname) and fullname.lower().endswith(file_suf):
+                if os.path.isfile(fullname) and fullname.lower().endswith(file_suf) and \
+                    PATCH_FILE_NAME.lower() not in f.lower():
                     try:
                         zip_file = ZipFile(fullname)
                         with self.lock:
@@ -115,6 +131,9 @@ class RawData:
                         all_dirs.add(target + remaining.split("/")[0])
 
         return sorted(list(all_dirs)), {v[2]: v[1] for k, v in all_files.items()}
+
+    def walk(self, target: str):
+        pass
 
     def get_file_by_zip(self, target: str, zip_name: str):
         return self.zip_q[zip_name].read(self.manifest[zip_name][target.lower()][0])
@@ -212,7 +231,7 @@ class GameInfo:
 
         return self
 
-    def work(self, cb_matrix):
+    def work(self, cb_matrix: dict[str, ModsStatusClass[bool]]):
         with self.lock:
             self.curr_prog = 1
             self.work_done = False
@@ -220,22 +239,119 @@ class GameInfo:
         if all(j is False for i in cb_matrix.values() for j in i):
             raise ValueError("无任何选项被勾选，退回！")
 
-        num_xmls = sum(len(v) for v in self.xdbs.values())
+        
+        rab_xdbs = {i:ET.fromstring(per.get_xml(i + ".xml")) for i in TOWNS}
+        all_artefacts_set = set(i.text for i in ET.fromstring(per.get_xml("AllArtefactsNoAdventure.xml")))
+        all_spells_set = set(i.text for i in ET.fromstring(per.get_xml("AllSpellsNoAdventure.xml")))
+
+        num_xmls = sum(len(v) for k, v in self.xdbs.items() if any(i for i in cb_matrix[k]))
         with self.lock:
             self.total_prog = num_xmls
-
         logging.info("开始生成兼容文件")
-        logging.info(f"  共有{num_xmls}个现有xdb文件需要加载")
+        logging.info(f"  共有{num_xmls}个现有xdb文件需要处理")
         prev_timeit = time()
-        for cat in self.xdbs:
-            for xml_name in self.xdbs[cat]:
-                self.xdbs[cat][xml_name] = ET.fromstring(self.xdbs[cat][xml_name])
-                with self.lock:
-                    self.curr_prog += 1
-                    self.curr_stage = f"正在解读{xml_name}"
-                    if self.work_done is True:
-                        raise InterruptedError
-        logging.warning(f"  现有xdb文件加载完毕，共耗时{time() - prev_timeit:.2f}秒。")
+
+        def __empty_element_by_tag(et: ET.Element, tag_to_empty):
+            to_remove_et = et.find(tag_to_empty)
+            to_remove_et_i = list(et).index(to_remove_et)
+            et.remove(to_remove_et)
+            et.insert(to_remove_et_i, ET.Element(tag_to_empty))
+
+        def __union_items_btw_et_and_set(et1: ET.Element, set2: set[str]):
+            # et1 will be modified
+            set1 = set(i.text for i in et1)
+            if len(set1) > 0:
+                for i in set2:
+                    if i not in set1:
+                        ele = ET.Element("Item")
+                        ele.text = i
+                        et1.append(ele)
+
+        def _add_missing_towns(map_et: ET.Element, rabs: dict[str, ET.Element]):
+            towns = set()
+            et = map_et.find("objects")
+            for i in et.findall("Item"):
+                adv_town_et = i.find("AdvMapTown")
+                if adv_town_et is not None:
+                    towns.add(adv_town_et.find("Name").text)
+
+            for rab in rabs:
+                if rab not in towns:
+                    map_et.find("objects").append(rabs[rab])
+
+        def _enable_all_spells_artefacts(map_et: ET.Element, cat: str):
+            def _sub_process(tag, all_set):
+                if not (cat == "scenario" and tag == "artifactIDs"):
+                    if cat in ("scenario", "singlemissions"):
+                        __union_items_btw_et_and_set(map_et.find(tag), all_set)
+                    else:
+                        __empty_element_by_tag(map_et, tag)
+
+
+            params = (("spellIDs", all_spells_set), ("artifactIDs", all_artefacts_set))
+            for param1, param2 in params:
+                _sub_process(param1, param2)
+
+
+        def _enable_all_heroes(map_et: ET.Element):
+            __empty_element_by_tag(map_et, "AvailableHeroes")
+
+        # All heroes mod
+        mod_dir = os.path.join(per.last_path, "UserMODs")
+        if not os.path.isdir(mod_dir):
+            try:
+                os.makedirs(mod_dir)
+            except FileExistsError:
+                err_msg = f"{mod_dir}是个文件，不是文件夹，请删除该文件后再运行。"
+                logging.warning("出错，任务中断！" + err_msg)
+                raise ValueError(err_msg)
+            except OSError:
+                err_msg = f"无法创建{mod_dir}，请检查游戏文件夹是否是只读。"
+                logging.warning("出错，任务中断！"+ err_msg)
+                raise ValueError(err_msg)
+
+        try:
+            merged_patch, _ = remove_merged_patch()
+        except PermissionError as e:
+            raise ValueError(str(e))
+
+        try:
+            with ZipFile(merged_patch, "w", compression=ZIP_DEFLATED,
+                        compresslevel=9) as zfp:
+                for cat in self.xdbs:
+                    if any(i for i in cb_matrix[cat]):
+                        for xml_name in self.xdbs[cat]:
+                            sub_prev_timeit = time()
+                            with self.lock:
+                                self.curr_stage = f"正在处理{xml_name}"
+                                self.curr_prog += 1
+
+                            if type(self.xdbs[cat][xml_name]) is not ET.Element:
+                                self.xdbs[cat][xml_name] = ET.fromstring(self.xdbs[cat][xml_name])
+
+                            if cb_matrix[cat].all_heroes is True:
+                                _enable_all_heroes(self.xdbs[cat][xml_name])
+                            if cb_matrix[cat].all_spells_artefacts is True:
+                                _enable_all_spells_artefacts(self.xdbs[cat][xml_name], cat)
+                            if cb_matrix[cat].racial_ability_boost is True:
+                                _add_missing_towns(self.xdbs[cat][xml_name], rab_xdbs)
+
+                            ET.indent(self.xdbs[cat][xml_name], space="    ", level=0)
+                            zfp.writestr(xml_name, ET.tostring(self.xdbs[cat][xml_name], short_empty_elements=True,
+                                                                encoding='utf8', method='xml'))
+
+                            with self.lock:
+                                if self.work_done is True:
+                                    logging.warning("用户中断了操作！")
+                                    raise InterruptedError
+                            logging.info(f"  {xml_name}处理完毕，耗时{time() - sub_prev_timeit:.2f}秒；")
+        except PermissionError:
+            err_msg = f"无法创建{merged_patch}。请检查你是否对该文件夹有写权限。"
+            logging.warning("出错，任务中断！"+ err_msg)
+            raise ValueError()
+
+
+        logging.warning(f"现有xdb文件处理完毕，生成文件{merged_patch}，共耗时{time() - prev_timeit:.2f}秒。")
         prev_timeit = time()
 
         with self.lock:
