@@ -31,7 +31,11 @@ class Persistence:
         return open(os.path.join(self.rc_path, "About.txt"), "r").read()
 
     def get_xml(self, xml_name):
-        return open(os.path.join(self.rc_path, xml_name), "r").read()
+        fullpath = os.path.join(self.rc_path, xml_name)
+        if os.path.isfile(fullpath):
+            return open(fullpath, "r").read()
+        else:
+            raise FileNotFoundError(fullpath)
 
     def _get_resource_path(self):
         try:

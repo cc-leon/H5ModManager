@@ -307,7 +307,7 @@ class MainWnd(Tk):
                 self.status_text.config(text="游戏数据加载完毕")
                 self._build_top_menu()
                 self._build_main_frame()
-                #self._on_menu_createmod()
+                self._on_menu_createmod()
             else:
                 status_text = ""
                 prog_value = 0.0
