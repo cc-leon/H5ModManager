@@ -119,7 +119,7 @@ class MainWnd(Tk):
         self.resizable(False, False)
 
         self.status_text = Label(self, text="已启动", border=1, relief="sunken", padding=2, font=("TkFixedFont", 10))
-        self.status_text.grid(column=0, row=4, sticky="ew")
+        self.status_text.grid(column=0, row=5, sticky="ew")
         self.status_prog = Progressbar(self)
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -151,17 +151,19 @@ class MainWnd(Tk):
         self.status_text.grid(column=0, row=self.num_rows, sticky="we", columnspan=1)
         self.status_prog.grid(column=1, row=self.num_rows, sticky="we")
         self.attributes("-disabled", True)
-        cb_matrix = {k:ModsStatusClass(*("selected" in i.state() for i in v)) for k, v in self.checkboxes.items()}
-        Thread(target=self._creatmod_thread, args=(self.data, cb_matrix)).start()
+        map_options = {k:ModsStatusClass(*("selected" in i.state() for i in v)) for k, v in self.map_checkboxes.items()}
+        hero_options = {k: "selected" in v.state() for k, v in self.hero_checkboxes.items()}
+        Thread(target=self._creatmod_thread, args=(self.data, map_options, hero_options)).start()
         self.cancel_wnd = CancelWnd(self, self.data.cancel)
         self.cancel_wnd.update()
         self.cancel_wnd.deiconify()
         self.after(10, self._createmod_thread_after, self.data)
 
-    def _creatmod_thread(self, data: GameInfo, cb_matrix: dict[str, ModsStatusClass[bool]]):
+    def _creatmod_thread(self, data: GameInfo, map_options: dict[str, ModsStatusClass[bool]],
+                         hero_options: dict[str, bool]):
         gg.info = None
         try:
-            gg.info = data.work(cb_matrix)
+            gg.info = data.work(map_options, hero_options)
         except ValueError as e:
             gg.info = e
         except InterruptedError as e:
@@ -223,7 +225,7 @@ class MainWnd(Tk):
         self.about_wnd = AboutWnd(self)
 
     def _build_main_frame(self):
-        self.checkboxes = {}
+        self.map_checkboxes = {}
 
         def _add_labelframe(title: str, row: int, options: list, mod_status: ModsStatusClass):
             lb = LabelFrame(self, text=title, font=("TkFixedFont", 11))
@@ -240,21 +242,34 @@ class MainWnd(Tk):
             return cbs
 
         options = ["兼容全英雄MOD", "兼容全魔法MOD（除了探险魔法）", "兼容种族增强MOD"]
-        self.checkboxes["scenario"] =  _add_labelframe("官方战役图兼容选项", self.num_rows, options, self.data.mod_status)
+        self.map_checkboxes["scenario"] =  _add_labelframe("官方战役图兼容选项", self.num_rows, options, self.data.mod_status)
         self.num_rows += 1
         options[1] = "兼容全魔法全宝物MOD（除了探险魔法和宝物）"
-        self.checkboxes["singlemissions"] = _add_labelframe("官方单人剧情图兼容选项", self.num_rows, options,
+        self.map_checkboxes["singlemissions"] = _add_labelframe("官方单人剧情图兼容选项", self.num_rows, options,
                                                             self.data.mod_status)
         self.num_rows += 1
         options[1] = "兼容全魔法全宝物MOD（包括探险魔法和宝物）"
-        self.checkboxes["multiplayer"] = _add_labelframe("官方多人图兼容选项", self.num_rows, options,
+        self.map_checkboxes["multiplayer"] = _add_labelframe("官方多人图兼容选项", self.num_rows, options,
                                                          self.data.mod_status)
         self.num_rows += 1
-        self.checkboxes["customized"] = _add_labelframe("玩家自制多人图和随机图兼容选项", self.num_rows, options,
+        self.map_checkboxes["customized"] = _add_labelframe("玩家自制多人图和随机图兼容选项", self.num_rows, options,
                                                         self.data.mod_status)
         self.num_rows += 1
 
-        self.checkboxes["scenario"].all_heroes.state(["!selected", "disabled"])
+        self.hero_checkboxes = {}
+        lb = LabelFrame(self, text="现有英雄兼容选项", font=("TkFixedFont", 11))
+        lb.grid(column=0, row=self.num_rows, columnspan=2, sticky="ew", padx=10, pady=10)
+        cb = Checkbutton(lb, text="兼容种族增强MOD")
+        cb.grid(column=0, row=0, sticky="w", padx=10, pady=10)
+        cb.state(["!alternate"])
+        if self.data.hero_rab_compat_status is None:
+            cb.state(["disabled"])
+        else:
+            cb.state(["selected"])
+        self.hero_checkboxes["rab"] = cb
+        self.num_rows += 1
+
+        self.map_checkboxes["scenario"].all_heroes.state(["!selected", "disabled"])
 
     def _asking_game_data(self):
         self.withdraw()
@@ -303,7 +318,7 @@ class MainWnd(Tk):
             elif type(gg.info) is GameInfo:
                 self.data = gg.info
                 self.status_prog.grid_forget()
-                self.status_text.grid(column=0, row=4, sticky="ew", columnspan=2)
+                self.status_text.grid(column=0, row=5, sticky="ew", columnspan=2)
                 self.status_text.config(text="游戏数据加载完毕")
                 self._build_top_menu()
                 self._build_main_frame()

@@ -1,7 +1,7 @@
 <spellIDs>
     <Item>SPELL_DEMONIC_STRIKE</Item>
     <Item>SPELL_CONSUME_CORPSE</Item>
-    <Item>SPELL_UBER_CHAIN_LIGHTNING</Item>
+    <!--<Item>SPELL_UBER_CHAIN_LIGHTNING</Item>
     <Item>SPELL_UBER_METEOR_SHOWER</Item>
-    <Item>SPELL_BOSS_FIREWALL</Item>
+    <Item>SPELL_BOSS_FIREWALL</Item>-->
 </spellIDs>

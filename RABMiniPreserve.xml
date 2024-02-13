@@ -1,8 +1,8 @@
 <Item href="#n:inline(AdvMapTown)" id="item_FF0EA878-00BE-4A31-ACD4-1D7A08983D82">
     <AdvMapTown>
         <Pos>
-            <x>0</x>
-            <y>0</y>
+            <x>-2</x>
+            <y>-2</y>
             <z>0</z>
         </Pos>
         <Rot>0</Rot>

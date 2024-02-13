@@ -1,0 +1,23 @@
+<Item href="#n:inline(AdvMapBuilding)" id="item_FE018E8E-31B9-4E40-80D0-DF5BD6B621B6">
+    <AdvMapBuilding>
+        <Pos>
+            <x>-2</x>
+            <y>-2</y>
+            <z>0</z>
+        </Pos>
+        <Rot>0</Rot>
+        <Floor>0</Floor>
+        <Name>RABMiniWarMachineFactory</Name>
+        <CombatScript/>
+        <pointLights/>
+        <Shared href="/MapObjects/MiniWarMachineFactory.(AdvMapBuildingShared).xdb#xpointer(/AdvMapBuildingShared)"/>
+        <PlayerID>PLAYER_1</PlayerID>
+        <CaptureTrigger>
+            <Action>
+                <FunctionName/>
+            </Action>
+        </CaptureTrigger>
+        <GroupID>0</GroupID>
+        <showCameras/>
+    </AdvMapBuilding>
+</Item>
