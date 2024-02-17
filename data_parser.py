@@ -13,7 +13,7 @@ from persistence import per
 info = None
 ModsStatusClass = namedtuple("ModsStatusClass", ["all_heroes", "all_spells_artefacts", "racial_ability_boost"])
 ModsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强Mod")
-TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniPreserve", "RABMiniWarMachineFactory")
+TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniPreserve", "RABMiniStronghold", "RABMiniWarMachineFactory")
 PATCH_FILE_NAME = "TTBereinMergedPatch.h5u"
 
 
@@ -125,6 +125,21 @@ class RawData:
 
         return sorted(list(all_dirs)), sorted(list(all_files.values()))
 
+    def walk(self, target: str, zips_to_exclude=set()):
+        target = target.lower()
+        if not target.endswith("/"):
+            target = target + "/"
+        if target.startswith("/"):
+            target = target[1:]
+
+        all_files = {}
+        for filename, (true_name, zip_name) in self.manifest.items():
+            if zip_name[-4:].lower() in zips_to_exclude:
+                continue
+            if filename.startswith(target):
+                all_files[filename] = (true_name, zip_name) 
+
+        return sorted(list(all_files.values()))
 
     def get_file(self, target: str):
         try:
@@ -186,19 +201,17 @@ class GameInfo:
     def _preload_maps(self, data: RawData):
         def _get_map_xdbs(map_dir, map_excl_set):
             result = {}
-            folders, _ = data.listdir(map_dir, map_excl_set)
-            for folder in folders:
-                _, files = data.listdir(folder, map_excl_set)
+            files = data.walk(map_dir, map_excl_set)
+            for file_name, _ in files:
                 map_xdb_name = None
-                for file_name, _ in files:
-                    if os.path.basename(file_name.lower()) == "map-tag.xdb":
-                        et = ET.fromstring(data.get_file(file_name))
-                        map_xdb_name = os.path.dirname(file_name) + "/" + \
-                            et.find("AdvMapDesc").attrib["href"].split("#")[0]
-                        break
+                if os.path.basename(file_name.lower()) == "map-tag.xdb":
+                    et = ET.fromstring(data.get_file(file_name))
+                    map_xdb_name = os.path.dirname(file_name) + "/" + \
+                        et.find("AdvMapDesc").attrib["href"].split("#")[0]
                 if map_xdb_name is None:
                     continue
                 result[map_xdb_name] = data.get_file(map_xdb_name)
+
             return result
 
         with self.lock:
@@ -223,19 +236,16 @@ class GameInfo:
         logging.warning(f"地图数据预加载完毕，发现{len(self.map_xdbs)}个相关文件，用时{time() - prev_timeit:.2f}秒。")
 
     def _preload_heroes(self, data: RawData):
-        def _get_hero_xdbs(map_dir):
+        def _get_hero_xdbs(hero_dir):
             result = {}
-            folders, _ = data.listdir(map_dir)
-            for folder in folders:
-                _, files = data.listdir(folder)
-                for file_name, _ in files:
-                    if os.path.basename(file_name.lower()).endswith(".xdb"):
-                        xdb_content = data.get_file(file_name)
-                        if b"<AdvMapHeroShared" in xdb_content:
-                            et = ET.fromstring(xdb_content)
-                            if et.tag == "AdvMapHeroShared":
-                                result[file_name] = et
-
+            files = data.walk(hero_dir)
+            for file_name, _ in files:
+                if os.path.basename(file_name.lower()).endswith(".xdb"):
+                    xdb_content = data.get_file(file_name)
+                    if b"<AdvMapHeroShared" in xdb_content:
+                        et = ET.fromstring(xdb_content)
+                        if et.tag == "AdvMapHeroShared":
+                            result[file_name] = et
             return result
 
         with self.lock:
