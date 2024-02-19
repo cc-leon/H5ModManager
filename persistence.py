@@ -1,5 +1,6 @@
 import os
 import sys
+import xml.etree.ElementTree as ET
 
 class Persistence:
     FILE_NAME = "H5SkillPredict.ini"
@@ -16,7 +17,11 @@ class Persistence:
         self.main_x, self.main_y = [int(i) for i in contents[2].split(",")]
         self.log_x, self.log_y = [int(i) for i in contents[3].split(",")]
         self.rc_path = ""
+        self._perk_swaps = {}
+        self._specialization_swaps = {}
+
         self._get_resource_path()
+        self._load_swaps()
 
     def save(self):
         contents = (self.last_path, self.show_log,
@@ -37,10 +42,32 @@ class Persistence:
         else:
             raise FileNotFoundError(fullpath)
 
+    def _load_swaps(self):
+        xml_text = self.get_xml("RABSwaps.xml")
+        root = ET.fromstring(xml_text)
+        perks_et = root.find("Perks")
+        specs_et = root.find("Specializations")
+
+        for i in perks_et:
+            self._perk_swaps[i.find("Perk1").text] = (i.find("Perk2").text, i.find("Skill1").text)
+
+        for i in specs_et:
+            self._specialization_swaps[i.find("Specialization1").text] = \
+                (i.find("Specialization2").text, i.find("SpecializationNameFileRef").attrib["href"], 
+                 i.find("SpecializationDescFileRef").attrib["href"], i.find("SpecializationIcon").attrib["href"])
+
     def _get_resource_path(self):
         try:
             self.rc_path = sys._MEIPASS
         except Exception:
             self.rc_path = os.path.abspath(".")
+
+    @property
+    def perk_swaps(self):
+        return self._perk_swaps
+
+    @property
+    def specialization_swaps(self):
+        return self._specialization_swaps
 
 per = Persistence()

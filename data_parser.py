@@ -11,8 +11,10 @@ from persistence import per
 
 # Global and game info
 info = None
-ModsStatusClass = namedtuple("ModsStatusClass", ["all_heroes", "all_spells_artefacts", "racial_ability_boost"])
-ModsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强Mod")
+MapsStatusClass = namedtuple("MapsStatusClass", ["all_heroes", "all_spells_artefacts", "racial_ability_boost"])
+MapsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强Mod")
+HeroesStatusClass = namedtuple("HeroesStatusClass", ["racial_ability_boost", ])
+HeroesStatusNames = ("种族能力增强mod", )
 TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniPreserve", "RABMiniStronghold", "RABMiniWarMachineFactory")
 PATCH_FILE_NAME = "TTBereinMergedPatch.h5u"
 
@@ -28,6 +30,7 @@ def remove_merged_patch():
             raise PermissionError(err_msg)
 
     return merged_patch, False
+
 
 class RawData:
     DIRS = {"data": ".pak", "UserMods": ".h5u", "Maps": ".h5m"}
@@ -144,6 +147,9 @@ class RawData:
     def get_file(self, target: str):
         try:
             return self.zip_q[self.get_zipname(target)].read(target)
+        except BadZipFile:
+            print("BadZipFile, ", target, "\t",self.get_zipname(target))
+            return self.zip_q[self.get_zipname(target)].read("Maps/Scenario/C5M4/map-tag.xdb")
         except:
             return None
 
@@ -182,19 +188,16 @@ class GameInfo:
 
         jobs = ("TTBereinAllHeroes.chk", "TTBereinAllSpellsArtefacts.chk", "TTBereinRacialAbilityBoost.chk")
 
-        self._mods_status = ModsStatusClass(*(data.get_file("TTBerein/" + j) for j in jobs))
-        try:
-            self._hero_rab_compat_status = self._mods_status.all_heroes + self._mods_status.racial_ability_boost
-        except TypeError:
-            self._hero_rab_compat_status = None
+        self._mods_status = MapsStatusClass(*(data.get_file("TTBerein/" + j) for j in jobs))
+        self._hero_status = HeroesStatusClass(self._mods_status.racial_ability_boost is not None, )
 
         for i in range(len(self._mods_status)):
             if self._mods_status[i] is not None:
                 zip_name = data.get_zipname("TTBerein/" + jobs[i])
                 logging.warning(f"发现“{os.path.basename(zip_name)}”已安装，"
-                                f"可以进行“{ModsStatusNames[i]}”方面的兼容")
+                                f"可以进行“{MapsStatusNames[i]}”方面的兼容")
             else:
-                logging.warning(f"没有发现{ModsStatusNames[i]}。")
+                logging.warning(f"没有发现{MapsStatusNames[i]}。")
 
         return self
 
@@ -256,7 +259,7 @@ class GameInfo:
         self.hero_xdbs = _get_hero_xdbs("MapObjects/")
         logging.warning(f"英雄数据预加载完毕，发现{len(self.hero_xdbs)}个相关文件，用时{time() - prev_timeit:.2f}秒。")
 
-    def work(self, map_options: dict[str, ModsStatusClass[bool]], hero_options: dict[str, bool]):
+    def work(self, map_options: dict[str, MapsStatusClass[bool]], hero_options: HeroesStatusClass):
         with self.lock:
             self.curr_prog = 1
             self.work_done = False
@@ -309,7 +312,7 @@ class GameInfo:
 
         return self
 
-    def _work_maps(self, map_options: dict[str, ModsStatusClass[bool]], zfp: ZipFile):
+    def _work_maps(self, map_options: dict[str, MapsStatusClass[bool]], zfp: ZipFile):
         rab_xdbs = {i: ET.fromstring(per.get_xml(i + ".xml")) for i in TOWNS}
         all_artefacts_set = set(i.text for i in ET.fromstring(per.get_xml("AllArtefactsNoAdventure.xml")))
         all_spells_set = set(i.text for i in ET.fromstring(per.get_xml("AllSpellsNoAdventure.xml")))
@@ -351,7 +354,6 @@ class GameInfo:
                     else:
                         __empty_element_by_tag(map_et, tag)
 
-
             params = (("spellIDs", all_spells_set), ("artifactIDs", all_artefacts_set))
             for param1, param2 in params:
                 _sub_process(param1, param2)
@@ -392,7 +394,7 @@ class GameInfo:
 
         return self
 
-    def _work_heroes(self, hero_options: dict[str, ModsStatusClass[bool]], zfp: ZipFile):
+    def _work_heroes(self, hero_options: HeroesStatusClass, zfp: ZipFile):
         def _load_spell_xdb(hero_class):
             xml_name = "spells_{}.xml".format(hero_class[len("HERO_CLASS_"):])
             try:
@@ -402,6 +404,7 @@ class GameInfo:
             return {i.text for i in spell_et.findall("Item")}
 
         def __union_items_btw_et_and_set(et1: ET.Element, set2: set[str]):
+            result = 0
             # et1 will be modified
             set1 = set(i.text for i in et1)
             for i in set2:
@@ -409,6 +412,43 @@ class GameInfo:
                     ele = ET.Element("Item")
                     ele.text = i
                     et1.append(ele)
+                    result += 1
+            return result
+
+        def _swap_skills(hero_et: ET.Element):
+            result = 0
+
+            skills = set()
+            for i in hero_et.find("PrimarySkill"):
+                if i.tag == "SkillID":
+                    skills.add(i.text)
+            for i in hero_et.find("Editable").find("skills"):
+                skills.add(i.find("SkillID").text)
+
+            perks_et = hero_et.find("Editable").find("perkIDs")
+            for i in perks_et:
+                if i.text in per.perk_swaps:
+                    if per.perk_swaps[i.text][1] in skills:
+                        i.text = per.perk_swaps[i.text][0]
+                        result += 1
+
+            return result
+
+        def _swap_specialization(hero_et: ET.Element):
+            result = 0
+
+            hero_specialization = hero_et.find("Specialization").text
+            if hero_specialization in per.specialization_swaps:
+                hero_et.find("Specialization").text = per.specialization_swaps[hero_specialization][0]
+                hero_et.find("SpecializationNameFileRef").attrib["href"] = \
+                    per.specialization_swaps[hero_specialization][1]
+                hero_et.find("SpecializationDescFileRef").attrib["href"] = \
+                    per.specialization_swaps[hero_specialization][2]
+                hero_et.find("SpecializationIcon").attrib["href"] = \
+                    per.specialization_swaps[hero_specialization][3]
+                result += 1
+
+            return result
 
         if self.spell_xdbs is None:
             self.spell_xdbs = {}
@@ -419,27 +459,32 @@ class GameInfo:
         prev_timeit = time()
 
         for hero_xml, hero_et in self.hero_xdbs.items():
+            changes = 0
+            if hero_options.racial_ability_boost is True:
+                hero_class = hero_et.find("Class").text
+                if hero_class not in self.spell_xdbs:
+                    self.spell_xdbs[hero_class] = _load_spell_xdb(hero_class)
+                changes += __union_items_btw_et_and_set(hero_et.find("Editable").find("spellIDs"),
+                                                        self.spell_xdbs[hero_class])
 
-            hero_class = hero_et.find("Class").text
-            if hero_class == "HERO_CLASS_RUNEMAGE":
-                pass
-            if hero_class not in self.spell_xdbs:
-                self.spell_xdbs[hero_class] = _load_spell_xdb(hero_class)
-            __union_items_btw_et_and_set(hero_et.find("Editable").find("spellIDs"), self.spell_xdbs[hero_class])
+                changes += _swap_skills(hero_et)
+                changes += _swap_specialization(hero_et)
 
-            ET.indent(hero_et, space="    ", level = 0)
-            zfp.writestr(hero_xml, ET.tostring(hero_et, short_empty_elements=True, encoding='utf8', method='xml'))
+            if changes > 0:
+                ET.indent(hero_et, space="    ", level = 0)
+                zfp.writestr(hero_xml, ET.tostring(hero_et, short_empty_elements=True, encoding='utf8', method='xml'))
+                logging.info(f"    英雄文件{hero_xml}处理完毕；")
+            else:
+                logging.info(f"    英雄文件{hero_xml}无需处理，略过……")
 
             with self.lock:
                 if self.work_done is True:
                     logging.warning("用户中断了操作！")
                     raise InterruptedError
-            logging.info(f"    英雄文件{hero_xml}处理完毕；")
 
         logging.warning(f"  英雄xdb文件处理完毕，共耗时{time() - prev_timeit:.2f}秒。")
 
         return self
-
 
     def cancel(self):
         with self.lock:
@@ -450,8 +495,8 @@ class GameInfo:
         return self._mods_status
 
     @property
-    def hero_rab_compat_status(self):
-        return self._hero_rab_compat_status
+    def hero_status(self):
+        return self._hero_status
 
     @staticmethod
     def get_time_weightage():
