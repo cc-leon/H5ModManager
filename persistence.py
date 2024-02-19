@@ -49,6 +49,13 @@ class Persistence:
         else:
             raise FileNotFoundError(result)
 
+    def get_ico(self):
+        result = os.path.join(self.rc_path, "Angel.ico")
+        if os.path.isfile(result):
+            return result
+        else:
+            raise FileNotFoundError(result)
+
     def _load_swaps(self):
         xml_text = self.get_xml("RABSwaps.xml")
         root = ET.fromstring(xml_text)

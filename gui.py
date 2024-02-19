@@ -62,13 +62,14 @@ class LogWnd(Toplevel):
         def __init__(self, queue):
             super(LogWnd._TextHandler, self).__init__()
             self.queue = queue
-
         def emit(self, record):
             self.queue.put(self.format(record))
 
     def __init__(self, parent):
         super(LogWnd, self).__init__(parent)
         self.queue = Queue()
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.iconbitmap(per.get_ico())
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -101,6 +102,10 @@ class LogWnd(Toplevel):
 
         self.after(100, self.append_msg)
 
+    def on_close(self):
+        per.log_x = self.winfo_x()
+        per.log_y = self.winfo_y()
+        per.save()
 
 class MainWnd(Tk):
     def __init__(self, *args):
@@ -124,7 +129,7 @@ class MainWnd(Tk):
         self.status_prog = Progressbar(self)
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-
+        self.iconbitmap(per.get_ico())
         self.update()
         self.geometry("+{}+{}".format(per.main_x, per.main_y))
         self._asking_game_data()
@@ -132,8 +137,6 @@ class MainWnd(Tk):
     def on_close(self):
         per.main_x = self.winfo_x()
         per.main_y = self.winfo_y()
-        per.log_x = self.log_wnd.winfo_x()
-        per.log_y = self.log_wnd.winfo_y()
         per.save()
         self.destroy()
 

@@ -1,4 +1,6 @@
 pyinstaller -F main.pyw ^
+    --icon=Angel.ico ^
+    --add-data "Angel.ico;." ^
     --add-data "About.txt;." ^
     --add-data "AllArtefactsNoAdventure.xml;." ^
     --add-data "AllSpellsNoAdventure.xml;." ^
