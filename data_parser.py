@@ -5,6 +5,8 @@ from collections import namedtuple
 from time import time
 from zipfile import BadZipFile, ZipFile, ZIP_DEFLATED
 from threading import Lock
+from tempfile import NamedTemporaryFile
+import subprocess
 
 from persistence import per
 
@@ -146,10 +148,18 @@ class RawData:
 
     def get_file(self, target: str):
         try:
-            return self.zip_q[self.get_zipname(target)].read(target)
+            zip_name = self.get_zipname(target)
+            return self.zip_q[zip_name].read(target)
         except BadZipFile:
-            print("BadZipFile, ", target, "\t",self.get_zipname(target))
-            return self.zip_q[self.get_zipname(target)].read("Maps/Scenario/C5M4/map-tag.xdb")
+            tmp_path = os.path.dirname(NamedTemporaryFile().name)
+            cmd = "{} e {} -i!*{} -y -o{}".format(per.get_7za(), zip_name, target, tmp_path)
+            tmp_file = os.path.join(tmp_path, os.path.basename(target))
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+            proc.communicate()
+            if proc.returncode == 0:
+                return open(tmp_file).read()
+            else:
+                return None
         except:
             return None
 
@@ -208,9 +218,11 @@ class GameInfo:
             for file_name, _ in files:
                 map_xdb_name = None
                 if os.path.basename(file_name.lower()) == "map-tag.xdb":
-                    et = ET.fromstring(data.get_file(file_name))
-                    map_xdb_name = os.path.dirname(file_name) + "/" + \
-                        et.find("AdvMapDesc").attrib["href"].split("#")[0]
+                    file_content = data.get_file(file_name)
+                    if file_content is not None:
+                        et = ET.fromstring(file_content)
+                        map_xdb_name = os.path.dirname(file_name) + "/" + \
+                            et.find("AdvMapDesc").attrib["href"].split("#")[0]
                 if map_xdb_name is None:
                     continue
                 result[map_xdb_name] = data.get_file(map_xdb_name)

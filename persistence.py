@@ -42,6 +42,13 @@ class Persistence:
         else:
             raise FileNotFoundError(fullpath)
 
+    def get_7za(self):
+        result = os.path.join(self.rc_path, "7za.exe")
+        if os.path.isfile(result):
+            return result
+        else:
+            raise FileNotFoundError(result)
+
     def _load_swaps(self):
         xml_text = self.get_xml("RABSwaps.xml")
         root = ET.fromstring(xml_text)
