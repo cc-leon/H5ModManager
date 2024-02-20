@@ -12,7 +12,7 @@ from persistence import per
 import data_parser as gg
 
 
-TITLE = "英雄无敌5MOD兼容工具 by 天天英吧"
+TITLE = "英雄无敌5MOD兼容工具 V{} by 天天英吧".format(per.VERSION)
 
 
 class CancelWnd(Toplevel):
