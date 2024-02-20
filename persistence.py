@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 
 class Persistence:
     FILE_NAME = "H5SkillPredict.ini"
+    VERSION = "0.90"
 
     def __init__(self):
         if os.path.isfile(Persistence.FILE_NAME):

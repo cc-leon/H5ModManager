@@ -41,7 +41,7 @@ class CancelWnd(Toplevel):
 
 
 class AboutWnd(simpledialog.Dialog):
-    def __init__(self, parent, title="关于“英雄无敌5MOD兼容工具”"):
+    def __init__(self, parent, title="关于“英雄无敌5MOD兼容工具 V{}”".format(per.VERSION)):
         super(AboutWnd, self).__init__(parent=parent, title=title)
 
     def body(self, master):

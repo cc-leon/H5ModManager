@@ -17,9 +17,15 @@ MapsStatusClass = namedtuple("MapsStatusClass", ["all_heroes", "all_spells_artef
 MapsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强Mod")
 HeroesStatusClass = namedtuple("HeroesStatusClass", ["racial_ability_boost", ])
 HeroesStatusNames = ("种族能力增强mod", )
-TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniPreserve", "RABMiniStronghold", "RABMiniWarMachineFactory")
+TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniPreserve", "RABMiniStronghold", 
+         "RABMiniWarMachineFactory")
 PATCH_FILE_NAME = "TTBereinMergedPatch.h5u"
-
+_SPEC_INFO_VALUE = namedtuple("_SPEC_INFO_VALUE", ["script", "var"])
+SPECIALIZATION_INFO = {
+    "HERO_SPEC_DARK_ACOLYTE": _SPEC_INFO_VALUE("scripts/RacialAbilityBoost/RacialAbilityBoostDarkAcolytes.lua",
+                                               "DARK_ACOLYTE_HEROES"), 
+    "HERO_SPEC_BORDERGUARD": _SPEC_INFO_VALUE("scripts/RacialAbilityBoost/RacialAbilityBoostBorderGuards.lua",
+                                              "BORDERGUARD_HEROES")}
 
 def remove_merged_patch():
     merged_patch = os.path.join(per.last_path, "UserMODs", PATCH_FILE_NAME)
@@ -36,8 +42,8 @@ def remove_merged_patch():
 
 class RawData:
     DIRS = {"data": ".pak", "UserMods": ".h5u", "Maps": ".h5m"}
-    PREFIX_FILTERS = ("maps/", "ttberein/", "mapobjects/", )
-    SUFFIX_FILTERS = (".xdb", ".chk", )
+    PREFIX_FILTERS = ("maps/", "ttberein/", "mapobjects/", "scripts/" )
+    SUFFIX_FILTERS = (".xdb", ".chk", ".lua")
 
     def __init__(self, h5_path: str):
         self.h5_path = h5_path
@@ -467,6 +473,9 @@ class GameInfo:
 
             return result
 
+        def _get_hero_name_and_specialization(hero_et: ET.Element):
+            return hero_et.find("InternalName").text, hero_et.find("Specialization").text
+
         if self.spell_xdbs is None:
             self.spell_xdbs = {}
 
@@ -474,7 +483,7 @@ class GameInfo:
             self.curr_stage = f"正在处理英雄文件数据文件"
 
         prev_timeit = time()
-
+        hero_spec_info = {i: set() for i in SPECIALIZATION_INFO.keys()}
         for hero_xml, hero_et in self.hero_xdbs.items():
             changes = 0
             if hero_options.racial_ability_boost is True:
@@ -487,12 +496,33 @@ class GameInfo:
                 changes += _swap_skills(hero_et)
                 changes += _swap_specialization(hero_et)
 
+                # After specialization swap, process special handling needed in script
+                hero_name, hero_spec = _get_hero_name_and_specialization(hero_et)
+                for k in SPECIALIZATION_INFO.keys():
+                    if hero_spec == k:
+                        hero_spec_info[k].add(hero_name)
+
             if changes > 0:
                 ET.indent(hero_et, space="    ", level = 0)
                 zfp.writestr(hero_xml, ET.tostring(hero_et, short_empty_elements=True, encoding='utf8', method='xml'))
                 logging.info(f"    英雄文件{hero_xml}处理完毕；")
             else:
                 logging.info(f"    英雄文件{hero_xml}无需处理，略过……")
+
+            with self.lock:
+                if self.work_done is True:
+                    logging.warning("用户中断了操作！")
+                    raise InterruptedError
+
+        with self.lock:
+            self.curr_stage = f"正在处理特殊特长脚本文件"
+
+        for k, v in hero_spec_info.items():
+            if len(v) > 0:
+                lua_content = "{0} = {{{1}}}".format(SPECIALIZATION_INFO[k].var,
+                                                     ", ".join(sorted(["\"{}\"".format(i) for i in v])))
+                zfp.writestr(SPECIALIZATION_INFO[k].script, lua_content)
+                logging.info(f"    特殊英雄信息已经写入{SPECIALIZATION_INFO[k].script}；")
 
             with self.lock:
                 if self.work_done is True:
