@@ -43,18 +43,19 @@ class CancelWnd(Toplevel):
 class AboutWnd(simpledialog.Dialog):
     def __init__(self, parent, title="关于“英雄无敌5MOD兼容工具”"):
         super(AboutWnd, self).__init__(parent=parent, title=title)
-        self.attributes("-toolwindow", True)
-        self.attributes("-topmost", True)
 
     def body(self, master):
+        self.attributes("-toolwindow", True)
+        self.attributes("-topmost", True)
         textbox = scrolledtext.ScrolledText(self, height=20, width=80)
         textbox.configure(font=('TkFixedFont', 11))
         textbox.insert(END, per.get_about_txt())
         textbox.pack()
         textbox.configure(state="disabled")
+        textbox.config(spacing1=5, spacing2=5, spacing3=5)
 
     def buttonbox(self):
-        pass
+        pass  # no buttons!
 
 
 class LogWnd(Toplevel):

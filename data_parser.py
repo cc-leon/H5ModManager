@@ -157,7 +157,12 @@ class RawData:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
             proc.communicate()
             if proc.returncode == 0:
-                return open(tmp_file).read()
+                result = open(tmp_file).read()
+                try:
+                    os.remove(tmp_file)
+                except:
+                    pass
+                return result
             else:
                 return None
         except:
