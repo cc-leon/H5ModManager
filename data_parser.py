@@ -17,8 +17,6 @@ MapsStatusClass = namedtuple("MapsStatusClass", ["all_heroes", "all_spells_artef
 MapsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强Mod")
 HeroesStatusClass = namedtuple("HeroesStatusClass", ["racial_ability_boost", ])
 HeroesStatusNames = ("种族能力增强mod", )
-TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniPreserve", "RABMiniStronghold", 
-         "RABMiniWarMachineFactory")
 PATCH_FILE_NAME = "TTBereinMergedPatch.h5u"
 _SPEC_INFO_VALUE = namedtuple("_SPEC_INFO_VALUE", ["script", "var"])
 SPECIALIZATION_INFO = {
@@ -336,9 +334,6 @@ class GameInfo:
         return self
 
     def _work_maps(self, map_options: dict[str, MapsStatusClass[bool]], zfp: ZipFile):
-        rab_xdbs = {i: ET.fromstring(per.get_xml(i + ".xml")) for i in TOWNS}
-        all_artefacts_set = set(i.text for i in ET.fromstring(per.get_xml("AllArtefactsNoAdventure.xml")))
-        all_spells_set = set(i.text for i in ET.fromstring(per.get_xml("AllSpellsNoAdventure.xml")))
         prev_timeit = time()
 
         def __empty_element_by_tag(et: ET.Element, tag_to_empty):
@@ -357,17 +352,29 @@ class GameInfo:
                         ele.text = i
                         et1.append(ele)
 
-        def _add_missing_towns(map_et: ET.Element, rabs: dict[str, ET.Element]):
+        def _add_missing_towns_and_arti(map_et: ET.Element):
             towns = set()
-            et = map_et.find("objects")
-            for i in et.findall("Item"):
+            artis = set()
+
+            objects_et = map_et.find("objects")
+            for i in objects_et.findall("Item"):
                 adv_town_et = i.find("AdvMapTown")
                 if adv_town_et is not None:
                     towns.add(adv_town_et.find("Name").text)
+                else:
+                    adv_arti_et = i.find("AdvMapArtifact")
+                    if adv_arti_et is not None:
+                        adv_arti_name = adv_arti_et.find("Name").text
+                        if adv_arti_name is not None and adv_arti_name != "":
+                            artis.add(adv_arti_name)
 
-            for rab in rabs:
+            for rab in per.rab_xdbs:
                 if rab not in towns:
-                    map_et.find("objects").append(rabs[rab])
+                    objects_et.append(per.rab_xdbs[rab])
+
+            for arti in per.artificer_artefact_names:
+                if arti not in artis:
+                    objects_et.append(per.get_artificer_artefact_xdb(arti))
 
         def _enable_all_spells_artefacts(map_et: ET.Element, cat: str):
             def _sub_process(tag, all_set):
@@ -377,10 +384,9 @@ class GameInfo:
                     else:
                         __empty_element_by_tag(map_et, tag)
 
-            params = (("spellIDs", all_spells_set), ("artifactIDs", all_artefacts_set))
+            params = (("spellIDs", per.all_spells_set), ("artifactIDs", per.all_artefacts_set))
             for param1, param2 in params:
                 _sub_process(param1, param2)
-
 
         def _enable_all_heroes(map_et: ET.Element):
             __empty_element_by_tag(map_et, "AvailableHeroes")
@@ -401,7 +407,7 @@ class GameInfo:
                     if map_options[cat].all_spells_artefacts is True:
                         _enable_all_spells_artefacts(self.map_xdbs[cat][xml_name], cat)
                     if map_options[cat].racial_ability_boost is True:
-                        _add_missing_towns(self.map_xdbs[cat][xml_name], rab_xdbs)
+                        _add_missing_towns_and_arti(self.map_xdbs[cat][xml_name])
 
                     ET.indent(self.map_xdbs[cat][xml_name], space="    ", level=0)
                     zfp.writestr(xml_name, ET.tostring(self.map_xdbs[cat][xml_name], short_empty_elements=True,

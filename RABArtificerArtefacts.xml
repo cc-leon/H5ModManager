@@ -1,0 +1,47 @@
+<ArtificerArtefacts>
+    <Spells>
+        <Item>SPELL_ENCOURAGE</Item>
+        <Item>SPELL_ABILITY_UNSUMMON</Item>
+        <Item>SPELL_ABILITY_DARK_RITUAL</Item>
+        <Item>SPELL_ABILITY_COUNTERSPELL</Item>
+        <Item>SPELL_HOLY_CHARGE</Item>
+        <Item>SPELL_PRAYER</Item>
+        <Item>SPELL_DEMONIC_STRIKE</Item>
+        <Item>SPELL_DEATH_SCREAM</Item>
+        <Item>SPELL_UBER_CHAIN_LIGHTNING</Item>
+        <Item>SPELL_CONSUME_CORPSE</Item>
+        <Item>SPELL_EFFECT_POWERFULL_BLOW</Item>
+        <Item>SPELL_BOSS_FIREWALL</Item>
+        <Item>SPELL_IMBUE_ARROW</Item>
+        <Item>SPELL_UBER_METEOR_SHOWER</Item>
+        <Item>SPELL_ABILITY_AVATAR_OF_DEATH</Item>
+        <Item>SPELL_SPIRIT_LINK</Item>
+    </Spells>
+    <Counts>30</Counts>
+    <Types>
+        <Wand href = "/MapObjects/Artifacts/wand_of_x.(AdvMapArtifactShared).xdb#xpointer(/AdvMapArtifactShared)"/>
+        <Scroll href = "/MapObjects/Artifacts/ScrollOfSpell.(AdvMapArtifactShared).xdb#xpointer(/AdvMapArtifactShared)"/>
+    </Types>
+    <Skeleton>
+        <Item href="#n:inline(AdvMapArtifact)" id="item_84218C43-D89F-430A-8252-5D1DE10498D8">
+            <AdvMapArtifact>
+                <Pos>
+                    <x>-2</x>
+                    <y>-2</y>
+                    <z>0</z>
+                </Pos>
+                <Rot>0</Rot>
+                <Floor>0</Floor>
+                <Name/>
+                <CombatScript/>
+                <pointLights/>
+                <Shared/>
+                <armySlots/>
+                <MessageFileRef href=""/>
+                <spellID/>
+                <RandomShiftRadius>0</RandomShiftRadius>
+                <untransferable>true</untransferable>
+            </AdvMapArtifact>
+        </Item>
+    </Skeleton>
+</ArtificerArtefacts>
