@@ -8,8 +8,8 @@ from copy import deepcopy
 class Persistence:
     FILE_NAME = "H5SkillPredict.ini"
     VERSION = "0.50"
-    TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniPreserve", "RABMiniStronghold", 
-             "RABMiniWarMachineFactory")
+    TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniInferno", "RABMiniPreserve",
+             "RABMiniStronghold", "RABMiniWarMachineFactory")
 
     def __init__(self):
         if os.path.isfile(Persistence.FILE_NAME):
