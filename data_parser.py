@@ -260,6 +260,8 @@ class GameInfo:
         xdb_jobs = (("scenario", "maps/scenario", set([".h5m"])),
                     ("singlemissions", "maps/singlemissions", set([".h5m"])),
                     ("multiplayer", "maps/multiplayer", set([".h5m"])),
+                    ("customized", "maps/scenario", set([".h5u", ".pak"])),
+                    ("customized", "maps/singlemissions", set([".h5u", ".pak"])),
                     ("customized", "maps/multiplayer", set([".h5u", ".pak"])),
                     ("customized", "maps/rmg", set([".h5u", ".pak"])))
         for map_cat, map_dir, map_excl_set in xdb_jobs:

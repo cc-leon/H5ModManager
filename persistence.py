@@ -52,7 +52,7 @@ class Persistence:
         return open(self._get_file(xml_name)).read()
 
     def get_7za(self):
-        return self._get_file("7za.exe")
+        return self._get_file("7z.exe")
 
     def get_ico(self):
         return self._get_file("Angel.ico")
