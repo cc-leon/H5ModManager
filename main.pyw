@@ -6,7 +6,7 @@ from tkinter import font
 
 
 def main():
-    logging.basicConfig(level=logging.INFO, filename="H5SkillPredict.log", filemode="w",
+    logging.basicConfig(level=logging.INFO, filename="TTBereinH5ModManger.log", filemode="w",
                         encoding="utf_16", format="%(message)s")
 
     main_window = MainWnd()

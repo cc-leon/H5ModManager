@@ -6,8 +6,8 @@ import itertools
 from copy import deepcopy
 
 class Persistence:
-    FILE_NAME = "H5SkillPredict.ini"
-    VERSION = "0.50"
+    FILE_NAME = "TTBereinH5ModManger.ini"
+    VERSION = "0.51"
     TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniInferno", "RABMiniPreserve",
              "RABMiniStronghold", "RABMiniWarMachineFactory")
 

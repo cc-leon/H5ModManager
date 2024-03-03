@@ -12,7 +12,6 @@ from persistence import per
 
 
 # Global and game info
-info = None
 MapsStatusClass = namedtuple("MapsStatusClass", ["all_heroes", "all_spells_artefacts", "racial_ability_boost"])
 MapsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强Mod")
 HeroesStatusClass = namedtuple("HeroesStatusClass", ["racial_ability_boost", ])
@@ -155,13 +154,18 @@ class RawData:
             zip_name = self.get_zipname(target)
             return self.zip_q[zip_name].read(target)
         except BadZipFile:
+            logging.warning(f"来自“{zip_name}”的“{target}”无法正常读取，尝试另外手段……")
             tmp_path = os.path.dirname(NamedTemporaryFile().name)
             cmd = "{} e {} -i!*{} -y -o{}".format(per.get_7za(), zip_name, target, tmp_path)
             tmp_file = os.path.join(tmp_path, os.path.basename(target))
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
             proc.communicate()
             if proc.returncode == 0:
-                result = open(tmp_file).read()
+                try:
+                    result = open(tmp_file).read()
+                except FileNotFoundError:
+                    logging.warning(f"另外手段也无法读取来自“{zip_name}”的“{target}”……")
+                    return None
                 try:
                     os.remove(tmp_file)
                 except:
@@ -202,6 +206,7 @@ class GameInfo:
 
 
     def preload(self, data:RawData):
+        self._data = data
         self._preload_maps(data)
         self._preload_heroes(data)
 
@@ -229,12 +234,21 @@ class GameInfo:
                 if os.path.basename(file_name.lower()) == "map-tag.xdb":
                     file_content = data.get_file(file_name)
                     if file_content is not None:
-                        et = ET.fromstring(file_content)
+                        try:
+                            et = ET.fromstring(file_content)
+                        except ET.ParseError:
+                            logging.warning(f"    来自“{data.get_zipname(file_name)}”的地图文件“{file_name}”格式错误无法读取！")
+                            continue
                         map_xdb_name = os.path.dirname(file_name) + "/" + \
                             et.find("AdvMapDesc").attrib["href"].split("#")[0]
                 if map_xdb_name is None:
                     continue
-                result[map_xdb_name] = data.get_file(map_xdb_name)
+                map_xdb_data = data.get_file(map_xdb_name)
+                if map_xdb_data is None:
+                    logging.warning(f"    无法读取“{map_xdb_name}”，根据来自“{data.get_zipname(file_name)}”的地图文件"
+                                    f"“{file_name}”！")
+                else:
+                    result[map_xdb_name] = map_xdb_data
 
             return result
 
@@ -266,6 +280,8 @@ class GameInfo:
             for file_name, _ in files:
                 if os.path.basename(file_name.lower()).endswith(".xdb"):
                     xdb_content = data.get_file(file_name)
+                    if xdb_content is None:
+                        continue
                     if b"<AdvMapHeroShared" in xdb_content:
                         et = ET.fromstring(xdb_content)
                         if et.tag == "AdvMapHeroShared":
@@ -314,12 +330,12 @@ class GameInfo:
         try:
             with ZipFile(merged_patch, "w", compression=ZIP_DEFLATED,
                         compresslevel=9) as zfp:
-                logging.info("开始生成兼容文件")
+                logging.warning("开始生成兼容文件")
                 if num_map_xmls > 0:
-                    logging.info(f"  共有{num_map_xmls}个地图xdb文件需要处理")
+                    logging.warning(f"  共有{num_map_xmls}个地图xdb文件需要处理")
                     self._work_maps(map_options, zfp)
                 if num_hero_xmls > 0:
-                    logging.info(f"  共有{num_hero_xmls}个英雄xdb文件需要处理")
+                    logging.warning(f"  共有{num_hero_xmls}个英雄xdb文件需要处理")
                     self._work_heroes(hero_options, zfp)
                 logging.warning(f"兼容补丁文件{merged_patch}已经生成")
 
@@ -400,7 +416,12 @@ class GameInfo:
                         self.curr_prog += 1
 
                     if type(self.map_xdbs[cat][xml_name]) is not ET.Element:
-                        self.map_xdbs[cat][xml_name] = ET.fromstring(self.map_xdbs[cat][xml_name])
+                        try:
+                            self.map_xdbs[cat][xml_name] = ET.fromstring(self.map_xdbs[cat][xml_name])
+                        except ET.ParseError:
+                            logging.warning(f"    来自“{self._data.get_zipname(xml_name)}”的地图文件"
+                                            f"“{xml_name}”格式错误无法读取！")
+                            continue
 
                     if map_options[cat].all_heroes is True:
                         _enable_all_heroes(self.map_xdbs[cat][xml_name])
