@@ -1,0 +1,1 @@
+print("Dummy MapScript.lua loaded, created by RAB!")

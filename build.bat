@@ -6,4 +6,5 @@ pyinstaller -F main.pyw ^
     --add-data "AllSpellsNoAdventure.xml;." ^
     --add-data "RAB*.xml;." ^
     --add-data "spells_*.xml;." ^
-    --add-data "7z.exe;."
+    --add-data "7z.exe;." ^
+    --add-data "MapScript.*;." ^

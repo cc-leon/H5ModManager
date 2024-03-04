@@ -18,6 +18,9 @@ MapsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强M
 HeroesStatusClass = namedtuple("HeroesStatusClass", ["racial_ability_boost", ])
 HeroesStatusNames = ("种族能力增强mod", )
 PATCH_FILE_NAME = "TTBereinMergedPatch.h5u"
+MAPSCRIPT_XDB = "MapScript.xdb"
+MAPSCRIPT_LUA = "MapScript.lua"
+MAPSCRIPT_HREF = "MapScript.xdb#xpointer(/Script)"
 _SPEC_INFO_VALUE = namedtuple("_SPEC_INFO_VALUE", ["script", "var"])
 SPECIALIZATION_INFO = {
     "HERO_SPEC_DARK_ACOLYTE": _SPEC_INFO_VALUE("scripts/RacialAbilityBoost/RacialAbilityBoostDarkAcolytes.lua",
@@ -412,6 +415,14 @@ class GameInfo:
         def _enable_all_heroes(map_et: ET.Element):
             __empty_element_by_tag(map_et, "AvailableHeroes")
 
+        def _enable_map_script(map_et: ET.Element):
+            script_et = map_et.find("MapScript")
+            if script_et is not None and ("href" not in script_et.attrib or script_et.attrib["href"] == ""):
+                script_et.attrib["href"] = MAPSCRIPT_HREF
+                return True
+            else:
+                return False
+
         for cat in self.map_xdbs:
             if any(i for i in map_options[cat]):
                 for xml_name in self.map_xdbs[cat]:
@@ -434,6 +445,10 @@ class GameInfo:
                         _enable_all_spells_artefacts(self.map_xdbs[cat][xml_name], cat)
                     if map_options[cat].racial_ability_boost is True:
                         _add_missing_towns_and_arti(self.map_xdbs[cat][xml_name])
+                        if _enable_map_script(self.map_xdbs[cat][xml_name]) is True:
+                            xml_dir = os.path.dirname(xml_name)
+                            zfp.writestr(os.path.join(xml_dir, MAPSCRIPT_XDB), per.get_xml(MAPSCRIPT_XDB))
+                            zfp.writestr(os.path.join(xml_dir, MAPSCRIPT_LUA), per.get_xml(MAPSCRIPT_LUA))
 
                     ET.indent(self.map_xdbs[cat][xml_name], space="    ", level=0)
                     zfp.writestr(xml_name, ET.tostring(self.map_xdbs[cat][xml_name], short_empty_elements=True,
