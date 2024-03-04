@@ -2,6 +2,7 @@ import logging
 import os
 import xml.etree.ElementTree as ET
 from collections import namedtuple
+from copy import deepcopy
 from time import time
 from zipfile import BadZipFile, ZipFile, ZIP_DEFLATED
 from threading import Lock
@@ -260,8 +261,8 @@ class GameInfo:
         xdb_jobs = (("scenario", "maps/scenario", set([".h5m"])),
                     ("singlemissions", "maps/singlemissions", set([".h5m"])),
                     ("multiplayer", "maps/multiplayer", set([".h5m"])),
-                    ("customized", "maps/scenario", set([".h5u", ".pak"])),
-                    ("customized", "maps/singlemissions", set([".h5u", ".pak"])),
+                    ("nochange", "maps/scenario", set([".h5u", ".pak"])),
+                    ("nochange", "maps/singlemissions", set([".h5u", ".pak"])),
                     ("customized", "maps/multiplayer", set([".h5u", ".pak"])),
                     ("customized", "maps/rmg", set([".h5u", ".pak"])))
         for map_cat, map_dir, map_excl_set in xdb_jobs:
@@ -318,7 +319,7 @@ class GameInfo:
                 err_msg = f"无法创建{mod_dir}，请检查游戏文件夹是否是只读。"
                 logging.warning("出错，任务中断！"+ err_msg)
                 raise ValueError(err_msg)
-
+        map_options["nochange"] = deepcopy(map_options["customized"])
         num_map_xmls = sum(len(v) for k, v in self.map_xdbs.items() if any(i for i in map_options[k]))
         num_hero_xmls = 0 if all(i.racial_ability_boost is False for i in map_options.values()) else len(self.hero_xdbs)
         with self.lock:
@@ -397,7 +398,9 @@ class GameInfo:
         def _enable_all_spells_artefacts(map_et: ET.Element, cat: str):
             def _sub_process(tag, all_set):
                 if not (cat == "scenario" and tag == "artifactIDs"):
-                    if cat in ("scenario", "singlemissions"):
+                    if cat == "nochange":
+                        pass
+                    elif cat in ("scenario", "singlemissions"):
                         __union_items_btw_et_and_set(map_et.find(tag), all_set)
                     else:
                         __empty_element_by_tag(map_et, tag)
@@ -425,7 +428,7 @@ class GameInfo:
                                             f"“{xml_name}”格式错误无法读取！")
                             continue
 
-                    if map_options[cat].all_heroes is True:
+                    if map_options[cat].all_heroes is True and cat != "nochange":
                         _enable_all_heroes(self.map_xdbs[cat][xml_name])
                     if map_options[cat].all_spells_artefacts is True:
                         _enable_all_spells_artefacts(self.map_xdbs[cat][xml_name], cat)
