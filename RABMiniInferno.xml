@@ -140,8 +140,8 @@
             </Item>
         </buildings>
         <Editable>
-            <NameFileRef href=""/>
-            <BiographyFileRef href=""/>
+            <NameFileRef href="/Text/Interface/RacialAbilityBoost/MiniInferno.txt"/>
+            <BiographyFileRef href="/Text/Interface/RacialAbilityBoost/MiniInferno.txt"/>
         </Editable>
         <armySlots/>
         <spellIDs/>
