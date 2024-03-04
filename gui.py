@@ -83,6 +83,7 @@ class LogWnd(Toplevel):
         logger = logging.getLogger()
         logger.addHandler(text_handler)
         self.after(0, self.append_msg)
+        self._parent = parent
 
     def append_msg(self):
         msgs = []
@@ -107,6 +108,7 @@ class LogWnd(Toplevel):
         per.log_x = self.winfo_x()
         per.log_y = self.winfo_y()
         per.save()
+        self._parent._on_menu_showlog()
 
 class MainWnd(Tk):
     def __init__(self, *args):
