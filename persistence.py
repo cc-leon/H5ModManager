@@ -7,8 +7,8 @@ from copy import deepcopy
 
 class Persistence:
     FILE_NAME = "TTBereinH5ModManger.ini"
-    VERSION = "0.52"
-    TOWNS = ("RABMiniAcademy", "RABMiniFortress", "RABMiniHaven", "RABMiniInferno", "RABMiniPreserve",
+    VERSION = "0.53"
+    TOWNS = ("RABMiniAcademy", "RABMiniHaven", "RABMiniInferno", "RABMiniPreserve",
              "RABMiniStronghold", "RABMiniWarMachineFactory")
 
     def __init__(self):
