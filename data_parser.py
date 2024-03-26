@@ -7,6 +7,8 @@ from time import time
 from zipfile import BadZipFile, ZipFile, ZIP_DEFLATED
 from threading import Lock
 from tempfile import NamedTemporaryFile
+from dataclasses import dataclass
+import sqlite3
 import subprocess
 
 from persistence import per
@@ -16,6 +18,7 @@ from persistence import per
 MapsStatusClass = namedtuple("MapsStatusClass", ["all_heroes", "all_spells_artefacts", "racial_ability_boost"])
 MapsStatusNames = ("全英雄Mod", "全魔法全宝物Mod", "种族能力增强Mod")
 HeroesStatusClass = namedtuple("HeroesStatusClass", ["racial_ability_boost", ])
+CreatureInfoClass = namedtuple("CreatureInfoClass", ["name", "cost"])
 HeroesStatusNames = ("种族能力增强mod", )
 PATCH_FILE_NAME = "TTBereinMergedPatch.h5u"
 MAPSCRIPT_XDB = "MapScript.xdb"
@@ -26,7 +29,14 @@ SPECIALIZATION_INFO = {
     "HERO_SPEC_DARK_ACOLYTE": _SPEC_INFO_VALUE("scripts/RacialAbilityBoost/RacialAbilityBoostDarkAcolytes.lua",
                                                "DARK_ACOLYTE_HEROES"), 
     "HERO_SPEC_BORDERGUARD": _SPEC_INFO_VALUE("scripts/RacialAbilityBoost/RacialAbilityBoostBorderGuards.lua",
-                                              "BORDERGUARD_HEROES")}
+                                              "BORDERGUARD_HEROES"),
+    "HERO_SPEC_SUZERAIN": _SPEC_INFO_VALUE("scripts/RacialAbilityBoost/RacialAbilityBoostDarkSuzerains.lua",
+                                           "SUZERAIN_HEROES")}
+CREATURE_INFO = "scripts/RacialAbilityBoost/RacialAbilityBoostCreatureInfos.lua"
+TOWN_VALUE = { 
+    "TOWN_HEAVEN" : 0, "TOWN_PRESERVE" : 1,  "TOWN_ACADEMY" : 2, "TOWN_DUNGEON" : 3, "TOWN_NECROMANCY" : 4,
+    "TOWN_INFERNO" : 5, "TOWN_FORTRESS" : 6, "TOWN_STRONGHOLD" : 7, "TOWN_NEUTRAL" : 8, }
+
 
 def remove_merged_patch():
     merged_patch = os.path.join(per.last_path, "UserMODs", PATCH_FILE_NAME)
@@ -41,9 +51,18 @@ def remove_merged_patch():
     return merged_patch, False
 
 
+@dataclass(frozen=True)
+class CreatureInfo:
+    town: str
+    cost: int
+    text: str
+    tier: int
+    upgrades: tuple[str, str]
+
+
 class RawData:
     DIRS = {"data": ".pak", "UserMods": ".h5u", "Maps": ".h5m"}
-    PREFIX_FILTERS = ("maps/", "ttberein/", "mapobjects/", "scripts/" )
+    PREFIX_FILTERS = ("maps/", "ttberein/", "mapobjects/", "scripts/", "gamemechanics/" )
     SUFFIX_FILTERS = (".xdb", ".chk", ".lua")
 
     def __init__(self, h5_path: str):
@@ -207,12 +226,13 @@ class GameInfo:
         self.lock = Lock()
         self.work_done = False
         self.spell_xdbs = None
-
+        self.creature_conn = None
 
     def preload(self, data:RawData):
         self._data = data
         self._preload_maps(data)
         self._preload_heroes(data)
+        self._preload_creatures(data)
 
         jobs = ("TTBereinAllHeroes.chk", "TTBereinAllSpellsArtefacts.chk", "TTBereinRacialAbilityBoost.chk")
 
@@ -302,6 +322,61 @@ class GameInfo:
         self.hero_xdbs = _get_hero_xdbs("MapObjects/")
         logging.warning(f"英雄数据预加载完毕，发现{len(self.hero_xdbs)}个相关文件，用时{time() - prev_timeit:.2f}秒。")
 
+    def _preload_creatures(self, data: RawData):
+        with self.lock:
+            self.curr_prog += 1
+            self.curr_stage = "正在预加载生物相关XDB文件入内存……"
+
+        prev_timeit = time()
+        conn = sqlite3.connect(':memory:', check_same_thread=False)
+        cur =  conn.cursor()
+        cur.execute('''CREATE TABLE CREATURE_INFOS (
+                        id TEXT PRIMARY KEY,
+                        cost INTEGER, tier INTEGER, town TEXT, town_value INTEGER, text TEXT
+                    )''')
+        cur.execute('''CREATE TABLE CREATURE_UPGRADES (
+                        ungraded TEXT, upgrade1 TEXT, upgrade2 TEXT,
+                        FOREIGN KEY(ungraded) REFERENCES CREATURE_INFO(id),
+                        FOREIGN KEY(upgrade1) REFERENCES CREATURE_INFO(id),
+                        FOREIGN KEY(upgrade2) REFERENCES CREATURE_INFO(id)
+                    )''')
+
+        creature_infos = []
+        creature_upgrades = []
+        upgrade_data = []
+        creature_xml = ET.fromstring(data.get_file("GameMechanics/RefTables/Creatures.xdb"))
+        creature_xml = creature_xml.find("objects")
+        for item_et in creature_xml:
+            creature_id = item_et.find("ID").text
+            creature_obj = item_et.find("Obj").attrib["href"].split("#")[0][1:]
+            creature_et = ET.fromstring(data.get_file(creature_obj))
+            cost = int(creature_et.find("Cost").find("Gold").text)
+            town = creature_et.find("CreatureTown").text
+            if town == "TOWN_NO_TYPE":
+                town = "TOWN_NEUTRAL"
+            tier = int(creature_et.find("CreatureTier").text)
+            upgrades = tuple(i.text for i in creature_et.find("Upgrades"))
+            visual_obj = creature_et.find("Visual").attrib["href"].split("#")[0][1:]
+            visual_et = ET.fromstring(data.get_file(visual_obj))
+            name_text = visual_et.find("CreatureNameFileRef").attrib["href"]
+            if name_text != "":
+                creature_infos.append((creature_id, cost, tier, town, TOWN_VALUE[town], name_text))
+                if len(upgrades) > 0:
+                    creature_upgrades.append((creature_id, *upgrades))
+
+        for id_, up1, up2 in creature_upgrades:
+            upgrade_data.append({"id" : id_, "upgrade" : 0})
+            upgrade_data.append({"id" : up1, "upgrade" : 1})
+            upgrade_data.append({"id" : up2, "upgrade" : 2})
+
+        cur.executemany("INSERT INTO CREATURE_INFOS VALUES (?, ?, ?, ?, ?, ?)", creature_infos)
+        cur.execute("ALTER TABLE CREATURE_INFOS ADD COLUMN upgrade INTEGER DEFAULT 0")
+        cur.executemany("UPDATE CREATURE_INFOS SET upgrade = :upgrade WHERE id = :id", upgrade_data)
+        cur.executemany("insert into CREATURE_UPGRADES values (?, ?, ?)", creature_upgrades)
+        conn.commit()
+        self.creature_conn = conn
+        logging.warning(f"生物数据预加载完毕，发现{len(creature_infos)}个相关文件，用时{time() - prev_timeit:.2f}秒。")
+
     def work(self, map_options: dict[str, MapsStatusClass[bool]], hero_options: HeroesStatusClass):
         with self.lock:
             self.curr_prog = 1
@@ -343,6 +418,7 @@ class GameInfo:
                 if num_hero_xmls > 0:
                     logging.warning(f"  共有{num_hero_xmls}个英雄xdb文件需要处理")
                     self._work_heroes(hero_options, zfp)
+                self._work_creatures(zfp)
                 logging.warning(f"兼容补丁文件{merged_patch}已经生成")
 
         except PermissionError:
@@ -579,6 +655,68 @@ class GameInfo:
         logging.warning(f"  英雄xdb文件处理完毕，共耗时{time() - prev_timeit:.2f}秒。")
 
         return self
+
+    def _work_creatures(self, zfp: ZipFile):
+        def _generate_lua_body(cur: sqlite3.Cursor, var_name:str, sql_query: str):
+            result = []
+            if "CREATURE_UNGRADE2UPGRADED[1]" in var_name:
+                result.append("CREATURE_UNGRADE2UPGRADED = {[1] = {}, [2] = {}}")
+                result.append("")
+
+            result.append("{} = {{".format(var_name))
+
+            cur.execute(sql_query)
+            format_string = "    [{}] = "
+            queried = cur.fetchall()
+            if type(queried[0][1]).__name__ == "int":
+                format_string += "{},"
+            else:
+                if queried[0][1].startswith("CREATURE_") or queried[0][1].startswith("TOWN_"):
+                    format_string += "{},"
+                else:
+                    format_string += "\"{}\","
+
+            result.extend([format_string.format(i, j) for i, j in queried])
+            result.append("}")
+            result.append("")
+
+            return result
+
+        lua_to_do = {
+            "CREATURE2TEXT" : "SELECT id, text FROM CREATURE_INFOS ORDER BY town_value, tier, upgrade, id",
+            "CREATURE2COST" : "SELECT id, cost FROM CREATURE_INFOS ORDER BY town_value, tier, upgrade, id",
+            "CREATURE2TIER" : "SELECT id, tier FROM CREATURE_INFOS ORDER BY town_value, tier, upgrade, id",
+            "CREATURE2TOWN" : "SELECT id, town FROM CREATURE_INFOS ORDER BY town_value, tier, upgrade, id",
+            "CREATURE2GRADE" : "SELECT id, upgrade FROM CREATURE_INFOS ORDER BY town_value, tier, upgrade, id",
+            "CREATURE_UPGRADE2UNGRADED" : \
+                """
+                SELECT upgraded, ungraded FROM
+                    (SELECT cu1.upgrade1 AS upgraded, cu1.ungraded AS ungraded, ci.town_value, ci.tier, ci.upgrade
+                     FROM CREATURE_UPGRADES cu1 JOIN CREATURE_INFOS ci ON ci.id = cu1.upgrade1
+                     UNION
+                     SELECT cu2.upgrade2 AS upgraded, cu2.ungraded AS ungraded, ci.town_value, ci.tier, ci.upgrade
+                     FROM CREATURE_UPGRADES cu2 JOIN CREATURE_INFOS ci ON ci.id = cu2.upgrade2)
+                ORDER BY town_value, tier, upgrade
+                """,
+            "CREATURE_UNGRADE2UPGRADED[1]" : \
+                """
+                SELECT ci.id, cu.upgrade1
+                FROM CREATURE_INFOS ci JOIN CREATURE_UPGRADES cu ON ci.id = cu.ungraded
+                ORDER BY ci.town_value, ci.tier, ci.upgrade""",
+            "CREATURE_UNGRADE2UPGRADED[2]" : \
+                """
+                SELECT ci.id, cu.upgrade2
+                FROM CREATURE_INFOS ci JOIN CREATURE_UPGRADES cu ON ci.id = cu.ungraded
+                ORDER BY ci.town_value, ci.tier, ci.upgrade"""
+        }
+
+        lua_content = []
+        cur = self.creature_conn.cursor()
+        for var_name, sql_query in lua_to_do.items():
+            lua_content.extend(_generate_lua_body(cur, var_name, sql_query))
+
+        zfp.writestr(CREATURE_INFO, "\n".join(lua_content))
+        logging.info(f"    生物信息已经写入{CREATURE_INFO}；")
 
     def cancel(self):
         with self.lock:
