@@ -119,7 +119,7 @@ class Persistence:
     def all_artefacts_set(self):
         return self._all_artefacts_set
 
-    property
+    @property
     def all_spells_set(self):
         return self._all_spells_set
 

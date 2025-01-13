@@ -401,7 +401,7 @@ class GameInfo:
         num_map_xmls = sum(len(v) for k, v in self.map_xdbs.items() if any(i for i in map_options[k]))
         num_hero_xmls = 0 if all(i.racial_ability_boost is False for i in map_options.values()) else len(self.hero_xdbs)
         with self.lock:
-            self.total_prog = num_map_xmls +  1 if num_hero_xmls else 0
+            self.total_prog = num_map_xmls +  (1 if num_hero_xmls else 0)
 
         try:
             merged_patch, _ = remove_merged_patch()
